@@ -222,28 +222,35 @@ export function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA]">
+    <div 
+      className="min-h-screen bg-cover bg-center bg-fixed relative"
+      style={{ backgroundImage: 'url(/images/login-bg.jpg)' }}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+      
       {/* Header */}
-      <div className="bg-white border-b border-[#EAEAEA]">
+      <div className="relative z-10 bg-white/10 backdrop-blur-md border-b border-white/20">
         <div className="max-w-3xl mx-auto px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-[12px] bg-[#F9B000] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-[12px] bg-[#F9B000] flex items-center justify-center shadow-lg">
               <Truck className="h-5 w-5 text-[#111111]" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-[#111111]">UdrCrafts</h1>
-              <p className="text-[10px] text-gray-400">Partner Registration</p>
+              <h1 className="text-sm font-bold text-white tracking-tight">UdrCrafts</h1>
+              <p className="text-[10px] text-white/80 uppercase tracking-widest">Partner Registration</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 lg:py-14">
+      <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 py-10 lg:py-14">
         {/* Progress Stepper */}
-        <ProgressStepper steps={steps} currentStep={currentStep} className="mb-10" />
+        <div className="bg-white/20 backdrop-blur-2xl rounded-[20px] p-6 mb-8 shadow-xl border border-white/30">
+          <ProgressStepper steps={steps} currentStep={currentStep} />
+        </div>
 
         {/* Step Content */}
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden bg-white/20 backdrop-blur-2xl border border-white/30 shadow-2xl rounded-[24px]">
           <CardContent className="p-8 lg:p-10">
             {/* Step 1: Basic Info */}
             <StepContainer isActive={currentStep === 0}>
