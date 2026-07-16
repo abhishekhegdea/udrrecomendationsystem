@@ -249,11 +249,12 @@ function Nav() {
               className="w-56 bg-transparent text-sm placeholder:text-ink/40 focus:outline-none"
             />
           </div>
-          <button className="grid h-11 w-11 place-items-center rounded-full border border-ink/10 hover:bg-ink/[0.04]">
+          <button className="hidden sm:grid h-11 w-11 place-items-center rounded-full border border-ink/10 hover:bg-ink/[0.04]">
             <Heart className="h-4 w-4" />
           </button>
-          <button onClick={() => navigate('/login')} className="rounded-full bg-ink text-background hover:bg-ink/90 px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors">
-            Partner Login
+          <button onClick={() => navigate('/login')} className="whitespace-nowrap rounded-full bg-ink text-background hover:bg-ink/90 px-4 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors">
+            <span className="sm:hidden">Login</span>
+            <span className="hidden sm:inline">Partner Login</span>
           </button>
           <button className="grid h-11 w-11 place-items-center rounded-full bg-ink text-background hover:bg-ink/90">
             <ShoppingBag className="h-4 w-4" />
