@@ -16,6 +16,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [otpSent, setOtpSent] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showLoginForm, setShowLoginForm] = useState(false)
 
   useEffect(() => {
     if (isAuthenticated) navigate('/dashboard')
@@ -44,25 +45,59 @@ export function LoginPage() {
       className="min-h-screen flex items-center justify-center p-6 bg-cover bg-center bg-no-repeat relative"
       style={{ backgroundImage: 'url(/images/login-bg.jpg)' }}
     >
-      {/* Dark overlay for contrast */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+      {/* Dynamic overlay for contrast */}
+      <div className={`absolute inset-0 transition-all duration-1000 ${showLoginForm ? 'bg-black/50 backdrop-blur-[4px]' : 'bg-black/10'}`} />
       
-      <motion.div 
-        initial={{ opacity: 0, y: 24 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.6 }} 
-        className="relative z-10 w-full max-w-[440px] bg-white/20 backdrop-blur-2xl border border-white/30 shadow-2xl rounded-[32px] p-8 sm:p-10"
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-12 h-12 rounded-[14px] bg-[#F9B000] flex items-center justify-center shadow-lg">
-            <Truck className="h-6 w-6 text-[#111111]" />
-          </div>
-          <div className="text-left">
-            <h1 className="text-xl font-bold text-white tracking-tight">UdrCrafts</h1>
-            <p className="text-[11px] text-white/80 uppercase tracking-widest">Partner Portal</p>
-          </div>
-        </div>
+      <AnimatePresence mode="wait">
+        {!showLoginForm ? (
+          <motion.div 
+            key="intro"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
+            transition={{ duration: 0.6 }}
+            className="relative z-10 flex flex-col items-center justify-end h-full w-full pb-20 sm:pb-32"
+          >
+            <div className="text-center mb-10">
+              <h1 className="text-5xl sm:text-7xl font-bold text-white tracking-tight drop-shadow-2xl mb-4" style={{ fontFamily: 'var(--font-display)' }}>Deliver with UdrCrafts</h1>
+              <p className="text-white text-lg sm:text-xl drop-shadow-lg font-medium">Handcrafted with Heart</p>
+            </div>
+            <Button 
+              size="lg" 
+              onClick={() => setShowLoginForm(true)}
+              className="bg-[#F9B000] hover:bg-[#E09E00] text-[#111111] rounded-full px-10 py-7 text-lg font-bold shadow-[0_20px_50px_-15px_rgba(249,176,0,0.7)] transition-all hover:scale-105"
+            >
+              Start your journey <ArrowRight className="ml-3 h-5 w-5" />
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="form"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+            animate={{ opacity: 1, scale: 1, y: 0 }} 
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.5 }} 
+            className="relative z-10 w-full max-w-[440px] bg-white/20 backdrop-blur-2xl border border-white/30 shadow-2xl rounded-[32px] p-8 sm:p-10"
+          >
+            {/* Close button */}
+            <button 
+              type="button"
+              onClick={() => setShowLoginForm(false)}
+              className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+
+            {/* Logo */}
+            <div className="flex items-center gap-3 mb-8 justify-center">
+              <div className="w-12 h-12 rounded-[14px] bg-[#F9B000] flex items-center justify-center shadow-lg">
+                <Truck className="h-6 w-6 text-[#111111]" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-xl font-bold text-white tracking-tight">UdrCrafts</h1>
+                <p className="text-[11px] text-white/80 uppercase tracking-widest">Partner Portal</p>
+              </div>
+            </div>
 
         {/* Heading */}
         <div className="mb-8 text-center">
@@ -150,14 +185,15 @@ export function LoginPage() {
           )}
         </form>
 
-        {/* Create Account */}
-        <div className="mt-8 pt-8 border-t border-white/20">
-          <p className="text-sm text-white/80 text-center mb-4">New to UdrCrafts? Join as a delivery partner today.</p>
-          <Button type="button" variant="secondary" fullWidth size="md" onClick={() => navigate('/signup')} className="bg-[#F9B000] hover:bg-[#E09E00] text-[#111111] rounded-[14px] font-semibold border-none">
-            Create Account <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </div>
-      </motion.div>
+          <div className="mt-8 pt-8 border-t border-white/20">
+            <p className="text-sm text-white/80 text-center mb-4">New to UdrCrafts? Join as a delivery partner today.</p>
+            <Button type="button" variant="secondary" fullWidth size="md" onClick={() => navigate('/signup')} className="bg-[#F9B000] hover:bg-[#E09E00] text-[#111111] rounded-[14px] font-semibold border-none">
+              Create Account <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </div>
+        </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
