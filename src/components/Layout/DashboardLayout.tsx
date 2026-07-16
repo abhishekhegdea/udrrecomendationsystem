@@ -18,7 +18,7 @@ export function DashboardLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-[#FAFAFA] overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Desktop Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
@@ -42,20 +42,20 @@ export function DashboardLayout() {
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-              className="fixed left-0 top-0 h-screen w-72 bg-white z-50 lg:hidden shadow-2xl"
+              className="fixed left-0 top-0 h-screen w-72 bg-card z-50 lg:hidden shadow-2xl"
             >
-              <div className="flex items-center justify-between p-6 border-b border-[#EAEAEA]">
+              <div className="flex items-center justify-between p-6 border-b border-border">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-[10px] bg-[#F9B000] flex items-center justify-center">
-                    <span className="text-sm font-bold text-[#111111]">U</span>
+                  <div className="w-9 h-9 rounded-[10px] bg-saffron flex items-center justify-center">
+                    <span className="text-sm font-bold text-ink">U</span>
                   </div>
-                  <span className="text-sm font-bold text-[#111111]">UdrCrafts Portal</span>
+                  <span className="text-sm font-bold text-foreground">UdrCrafts Portal</span>
                 </div>
                 <button
                   onClick={() => setMobileSidebarOpen(false)}
-                  className="p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                  className="p-2 rounded-xl hover:bg-muted transition-colors"
                 >
-                  <X className="h-5 w-5 text-gray-500" />
+                  <X className="h-5 w-5 text-muted-foreground" />
                 </button>
               </div>
               <div className="overflow-y-auto h-full pb-20">

@@ -35,7 +35,7 @@ export function DocumentsPage() {
     <motion.div variants={container} initial="hidden" animate="show" className="max-w-3xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <h2 className="display-2 text-[#111111]">My Documents</h2>
+        <h2 className="display-2 text-foreground">My Documents</h2>
         <p className="text-gray-500 mt-2 body-lg">Manage and track your verification documents. Keep them up to date for uninterrupted partnership.</p>
       </div>
 
@@ -50,7 +50,7 @@ export function DocumentsPage() {
                 <div className={`w-10 h-10 rounded-[12px] ${config.bg} flex items-center justify-center mx-auto mb-3`}>
                   <Icon className={`h-5 w-5 ${config.text}`} />
                 </div>
-                <p className="text-xl font-bold text-[#111111]" style={{ fontFamily: 'var(--font-display)' }}>{count}</p>
+                <p className="text-xl font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>{count}</p>
                 <p className="text-xs text-gray-500 mt-1 capitalize font-medium">{key}</p>
               </CardContent>
             </Card>
@@ -75,7 +75,7 @@ export function DocumentsPage() {
                       <doc.icon className="h-5 w-5 text-gray-600" />
                     </div>
                     <div>
-                      <p className="text-base font-semibold text-[#111111]">{doc.title}</p>
+                      <p className="text-base font-semibold text-foreground">{doc.title}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{doc.description}</p>
                     </div>
                   </div>

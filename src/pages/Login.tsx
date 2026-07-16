@@ -27,6 +27,7 @@ export function LoginPage() {
     const newErrors: Record<string, string> = {}
     if (!phone || phone.length < 10) newErrors.phone = 'Enter a valid mobile number'
     if (!showOTP && !password) newErrors.password = 'Password is required'
+    if (showOTP && otpSent && (!otp || otp.length < 6)) newErrors.otp = 'Enter a valid 6-digit OTP'
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return }
 
     setLoading(true)
@@ -108,52 +109,59 @@ export function LoginPage() {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
-          <div className="bg-white/80 backdrop-blur-md rounded-[16px] p-1 shadow-inner">
-            <Input 
-              label="Mobile Number" 
-              type="tel" 
-              placeholder="Enter your 10-digit mobile number" 
-              value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} 
-              error={errors.phone} 
-              required 
-              className="bg-transparent border-none focus:ring-0 shadow-none px-4"
-            />
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-white/90 ml-1">Mobile Number</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <span className="text-white/60 font-medium text-sm">+91</span>
+              </div>
+              <input 
+                type="tel" 
+                placeholder="98765 43210" 
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} 
+                required 
+                className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] pl-[3.25rem] pr-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner font-medium"
+              />
+            </div>
+            {errors.phone && <p className="text-xs text-red-300 ml-1">{errors.phone}</p>}
           </div>
 
           <AnimatePresence mode="wait">
             {showOTP ? (
               <motion.div key="otp" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
                 {otpSent && (
-                  <div className="bg-white/80 backdrop-blur-md rounded-[16px] p-1 shadow-inner">
-                    <Input 
-                      label="OTP" 
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-sm font-medium text-white/90 ml-1">One-Time Password</label>
+                    <input 
                       type="text" 
-                      placeholder="Enter 6-digit OTP" 
+                      placeholder="000 000" 
                       value={otp}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
-                      error={errors.otp} 
-                      required
-                      hint={`OTP sent to +91 XXXXX${phone.slice(-4) || 'XXXX'}`} 
-                      className="bg-transparent border-none focus:ring-0 shadow-none px-4"
+                      required 
+                      className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] px-4 text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner text-center tracking-[0.5em] font-bold text-lg"
                     />
+                    <div className="flex justify-between items-center mx-1">
+                      {errors.otp ? <p className="text-xs text-red-300">{errors.otp}</p> : <p className="text-[11px] text-white/50">OTP sent to +91 XXXXX{phone.slice(-4) || 'XXXX'}</p>}
+                    </div>
                   </div>
                 )}
               </motion.div>
             ) : (
               <motion.div key="password" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                <div className="bg-white/80 backdrop-blur-md rounded-[16px] p-1 shadow-inner">
-                  <Input 
-                    label="Password" 
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-sm font-medium text-white/90 ml-1">Password</label>
+                  <input 
                     type="password" 
-                    placeholder="Enter your password" 
+                    placeholder="••••••••" 
                     value={password}
                     onChange={(e) => setPassword(e.target.value)} 
-                    error={errors.password} 
-                    required
-                    hint="Must be at least 8 characters" 
-                    className="bg-transparent border-none focus:ring-0 shadow-none px-4"
+                    required 
+                    className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] px-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner tracking-widest text-lg font-medium"
                   />
+                  <div className="flex justify-between items-center mx-1">
+                    {errors.password ? <p className="text-xs text-red-300">{errors.password}</p> : <p className="text-[11px] text-white/50">Must be at least 8 characters</p>}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -173,16 +181,18 @@ export function LoginPage() {
             <div className="relative flex justify-center"><span className="bg-transparent px-4 text-xs text-white/60 uppercase font-medium backdrop-blur-md rounded-full">or</span></div>
           </div>
 
-          <Button type="button" variant="ghost" fullWidth size="sm" onClick={() => setShowOTP(!showOTP)} className="bg-transparent hover:bg-white/10 text-white/80 hover:text-white border-transparent rounded-[14px]">
-            <Smartphone className="h-4 w-4 mr-2" />
-            {showOTP ? 'Use Password Instead' : 'Continue with OTP'}
-          </Button>
+          <div className="flex items-center justify-between gap-4">
+            <Button type="button" variant="ghost" fullWidth size="sm" onClick={() => setShowOTP(!showOTP)} className="bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-[14px] flex-1">
+              <Smartphone className="h-4 w-4 mr-2" />
+              {showOTP ? 'Use Password' : 'Login via OTP'}
+            </Button>
 
-          {!showOTP && (
-            <div className="text-center pt-2">
-              <button type="button" className="text-sm text-white/90 hover:text-white hover:underline font-medium transition-colors">Forgot Password?</button>
-            </div>
-          )}
+            {!showOTP && (
+              <button type="button" className="text-xs text-white/80 hover:text-white hover:underline font-medium transition-colors flex-1 text-right">
+                Forgot Password?
+              </button>
+            )}
+          </div>
         </form>
 
           <div className="mt-8 pt-8 border-t border-white/20">

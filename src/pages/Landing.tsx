@@ -252,7 +252,7 @@ function Nav() {
           <button className="grid h-11 w-11 place-items-center rounded-full border border-ink/10 hover:bg-ink/[0.04]">
             <Heart className="h-4 w-4" />
           </button>
-          <button onClick={() => navigate('/login')} className="hidden sm:block rounded-full bg-ink text-background hover:bg-ink/90 px-5 py-2.5 text-sm font-medium transition-colors">
+          <button onClick={() => navigate('/login')} className="rounded-full bg-ink text-background hover:bg-ink/90 px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors">
             Partner Login
           </button>
           <button className="grid h-11 w-11 place-items-center rounded-full bg-ink text-background hover:bg-ink/90">

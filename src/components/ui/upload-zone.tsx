@@ -117,7 +117,7 @@ export function UploadZone({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <p className="text-sm font-medium text-gray-700">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
 
       <div
         onDragOver={handleDragOver}
@@ -128,8 +128,8 @@ export function UploadZone({
           'relative cursor-pointer rounded-[18px] border-2 border-dashed p-10 transition-all duration-200',
           'hover:border-[#F9B000] hover:bg-[#F9B000]/5',
           isDragging
-            ? 'border-[#F9B000] bg-[#F9B000]/10 scale-[1.02]'
-            : 'border-[#EAEAEA] bg-white',
+            ? 'border-saffron bg-saffron/10 scale-[1.02]'
+            : 'border-border bg-background',
           value && 'border-green-300 bg-green-50/30'
         )}
       >
@@ -155,7 +155,7 @@ export function UploadZone({
             <div
               className={cn(
                 'w-14 h-14 rounded-full flex items-center justify-center transition-colors',
-                isDragging ? 'bg-[#F9B000]/20' : 'bg-gray-100'
+                isDragging ? 'bg-saffron/20' : 'bg-muted'
               )}
             >
               <Upload
@@ -166,7 +166,7 @@ export function UploadZone({
               />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-700">
+              <p className="text-sm font-medium text-foreground">
                 <span className="text-[#F9B000]">Click to upload</span> or drag and drop
               </p>
               <p className="text-xs text-gray-400 mt-1">
@@ -184,7 +184,7 @@ export function UploadZone({
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="flex items-center gap-4 p-4 rounded-[12px] bg-gray-50 border border-[#EAEAEA]"
+            className="flex items-center gap-4 p-4 rounded-[12px] bg-muted border border-border"
           >
             {file.preview ? (
               <img
@@ -193,19 +193,19 @@ export function UploadZone({
                 className="w-12 h-12 rounded-[10px] object-cover flex-shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-[10px] bg-gray-200 flex items-center justify-center flex-shrink-0">
-                <FileText className="h-5 w-5 text-gray-500" />
+              <div className="w-12 h-12 rounded-[10px] bg-background flex items-center justify-center flex-shrink-0">
+                <FileText className="h-5 w-5 text-muted-foreground" />
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-700 truncate">
+              <p className="text-sm font-medium text-foreground truncate">
                 {file.file.name}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {(file.file.size / 1024).toFixed(1)} KB
               </p>
               {!file.uploaded && (
-                <div className="mt-2 h-[4px] bg-gray-200 rounded-full overflow-hidden">
+                <div className="mt-2 h-[4px] bg-background rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-[#F9B000] rounded-full"
                     initial={{ width: 0 }}
@@ -219,7 +219,7 @@ export function UploadZone({
                 e.stopPropagation()
                 removeFile(index)
               }}
-              className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
+              className="p-1.5 hover:bg-background rounded-lg transition-colors flex-shrink-0"
             >
               <X className="h-4 w-4 text-gray-400" />
             </button>

@@ -79,14 +79,15 @@
 }
 
 .dark {
-  --background: oklch(0.14 0.01 60);
-  --foreground: oklch(0.97 0.01 85);
-  --card: oklch(0.18 0.01 60);
-  --card-foreground: oklch(0.97 0.01 85);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --muted: oklch(0.22 0.01 60);
-  --muted-foreground: oklch(0.7 0.02 60);
+  color-scheme: dark;                       /* Fixes native date picker calendar icon */
+  --background: oklch(0.12 0.05 285);       /* Deep midnight indigo */
+  --foreground: oklch(0.98 0.01 285);       /* Crisp ice white for max legibility */
+  --card: oklch(0.18 0.06 285);             /* Rich indigo card */
+  --card-foreground: oklch(0.98 0.01 285);  /* Crisp ice white */
+  --border: oklch(0.70 0.18 320 / 35%);     /* Vibrant neon pinkish-purple border! */
+  --input: oklch(0.22 0.08 285);            /* Lighter indigo for inputs */
+  --muted: oklch(0.26 0.10 285);            /* High contrast muted boxes */
+  --muted-foreground: oklch(0.85 0.08 285); /* Bright lavender for muted text */
 }
 
 @layer base {

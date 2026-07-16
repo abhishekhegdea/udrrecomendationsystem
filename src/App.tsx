@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
+import { ThemeProvider } from '@/contexts/ThemeContext'
 import { DashboardLayout } from '@/components/Layout/DashboardLayout'
 import { LoginPage } from '@/pages/Login'
 import { SignupPage } from '@/pages/Signup'
@@ -75,7 +76,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <ThemeProvider defaultTheme="light" storageKey="udrcrafts-theme">
+            <AppRoutes />
+          </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

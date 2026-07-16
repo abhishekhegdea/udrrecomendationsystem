@@ -105,7 +105,13 @@ export function SignupPage() {
     const errs: Record<string, string> = {}
     if (!formData.firstName.trim()) errs.firstName = 'First name is required'
     if (!formData.lastName.trim()) errs.lastName = 'Last name is required'
-    if (!formData.dateOfBirth) errs.dateOfBirth = 'Date of birth is required'
+    if (!formData.dateOfBirth) {
+      errs.dateOfBirth = 'Date of birth is required'
+    } else {
+      const age = (new Date().getTime() - new Date(formData.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+      if (age < 18) errs.dateOfBirth = 'Must be at least 18 years old'
+      if (age > 100 || age < 0) errs.dateOfBirth = 'Please enter a valid date of birth'
+    }
     if (!formData.gender) errs.gender = 'Gender is required'
     if (!formData.mobileNumber || formData.mobileNumber.length < 10) errs.mobileNumber = 'Valid mobile number required'
     if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errs.email = 'Valid email required'
@@ -123,9 +129,13 @@ export function SignupPage() {
   const validateStep2 = () => {
     const errs: Record<string, string> = {}
     if (!formData.aadhaarNumber || formData.aadhaarNumber.length !== 12) errs.aadhaarNumber = 'Aadhaar must be 12 digits'
-    if (!formData.panNumber || !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData.panNumber.toUpperCase())) errs.panNumber = 'Invalid PAN format'
+    if (!formData.panNumber || !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData.panNumber)) errs.panNumber = 'Invalid PAN format'
     if (!formData.drivingLicenseNumber.trim()) errs.drivingLicenseNumber = 'DL number required'
-    if (!formData.drivingLicenseExpiry) errs.drivingLicenseExpiry = 'Expiry date required'
+    if (!formData.drivingLicenseExpiry) {
+      errs.drivingLicenseExpiry = 'Expiry date required'
+    } else if (new Date(formData.drivingLicenseExpiry) < new Date()) {
+      errs.drivingLicenseExpiry = 'License has expired'
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -135,7 +145,11 @@ export function SignupPage() {
     if (!formData.vehicleType) errs.vehicleType = 'Select vehicle type'
     if (!formData.vehicleRegistrationNumber.trim()) errs.vehicleRegistrationNumber = 'Registration number required'
     if (!formData.insuranceNumber.trim()) errs.insuranceNumber = 'Insurance number required'
-    if (!formData.insuranceExpiry) errs.insuranceExpiry = 'Insurance expiry required'
+    if (!formData.insuranceExpiry) {
+      errs.insuranceExpiry = 'Insurance expiry required'
+    } else if (new Date(formData.insuranceExpiry) < new Date()) {
+      errs.insuranceExpiry = 'Insurance has expired'
+    }
     if (!formData.helmetAvailable) errs.helmetAvailable = 'Please select'
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -182,7 +196,13 @@ export function SignupPage() {
     <Input
       label={label}
       value={(formData as any)[field] || ''}
-      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField(field, e.target.value)}
+      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = e.target.value
+        if (['panNumber', 'drivingLicenseNumber', 'vehicleRegistrationNumber', 'insuranceNumber', 'ifscCode'].includes(field)) {
+          val = val.toUpperCase()
+        }
+        updateField(field, val)
+      }}
       error={errors[field]}
       {...props}
     />
@@ -267,22 +287,24 @@ export function SignupPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className="block text-sm font-medium text-foreground">
                       Date of Birth <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="date"
+                      min="1900-01-01"
+                      max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                       value={formData.dateOfBirth}
                       onChange={(e) => updateField('dateOfBirth', e.target.value)}
-                      className="w-full rounded-[12px] border-2 border-[#EAEAEA] bg-white px-4 text-sm text-[#111111] focus:outline-none focus:border-[#F9B000] focus:ring-2 focus:ring-[#F9B000]/10 transition-all h-[52px]"
+                      className="w-full rounded-[14px] border-2 border-border bg-background px-4 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-3 focus:ring-ring/10 transition-all h-[52px]"
                     />
                     {errors.dateOfBirth && (
-                      <p className="text-xs text-[#EF4444]">{errors.dateOfBirth}</p>
+                      <p className="text-xs text-destructive flex items-center gap-1.5">{errors.dateOfBirth}</p>
                     )}
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className="block text-sm font-medium text-foreground">
                       Gender <span className="text-red-400">*</span>
                     </label>
                     <div className="flex gap-3 h-[52px]">
@@ -291,10 +313,10 @@ export function SignupPage() {
                           key={g}
                           type="button"
                           onClick={() => updateField('gender', g)}
-                          className={`flex-1 rounded-[12px] text-sm font-semibold border-2 transition-all ${
+                          className={`flex-1 rounded-[14px] text-sm font-semibold border-2 transition-all ${
                             formData.gender === g
-                              ? 'border-[#F9B000] bg-[#F9B000]/5 text-[#111111]'
-                              : 'border-[#EAEAEA] text-gray-500 hover:border-gray-300'
+                              ? 'border-saffron bg-saffron/10 text-foreground'
+                              : 'border-border bg-background text-muted-foreground hover:border-muted-foreground/30'
                           }`}
                         >
                           {g}
@@ -302,7 +324,7 @@ export function SignupPage() {
                       ))}
                     </div>
                     {errors.gender && (
-                      <p className="text-xs text-[#EF4444]">{errors.gender}</p>
+                      <p className="text-xs text-destructive flex items-center gap-1.5">{errors.gender}</p>
                     )}
                   </div>
                 </div>
@@ -313,29 +335,29 @@ export function SignupPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground">
                     Current Address <span className="text-red-400">*</span>
                   </label>
                   <textarea
                     value={formData.currentAddress}
                     onChange={(e) => updateField('currentAddress', e.target.value)}
                     rows={3}
-                    className="w-full rounded-[12px] border-2 border-[#EAEAEA] bg-white px-4 py-3 text-sm text-[#111111] focus:outline-none focus:border-[#F9B000] focus:ring-2 focus:ring-[#F9B000]/10 transition-all resize-none"
+                    className="w-full rounded-[14px] border-2 border-border bg-background px-4 py-3 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-3 focus:ring-ring/10 transition-all resize-none"
                   />
                   {errors.currentAddress && (
-                    <p className="text-xs text-[#EF4444]">{errors.currentAddress}</p>
+                    <p className="text-xs text-destructive flex items-center gap-1.5">{errors.currentAddress}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground">
                     Permanent Address
                   </label>
                   <textarea
                     value={formData.permanentAddress}
                     onChange={(e) => updateField('permanentAddress', e.target.value)}
                     rows={3}
-                    className="w-full rounded-[12px] border-2 border-[#EAEAEA] bg-white px-4 py-3 text-sm text-[#111111] focus:outline-none focus:border-[#F9B000] focus:ring-2 focus:ring-[#F9B000]/10 transition-all resize-none"
+                    className="w-full rounded-[14px] border-2 border-border bg-background px-4 py-3 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-3 focus:ring-ring/10 transition-all resize-none"
                   />
                 </div>
 
@@ -392,17 +414,18 @@ export function SignupPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
                     {renderField('drivingLicenseNumber', 'Driving License Number', { required: true })}
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
+                      <label className="block text-sm font-medium text-foreground">
                         DL Expiry Date <span className="text-red-400">*</span>
                       </label>
                       <input
                         type="date"
+                        min={new Date().toISOString().split('T')[0]}
                         value={formData.drivingLicenseExpiry}
                         onChange={(e) => updateField('drivingLicenseExpiry', e.target.value)}
-                        className="w-full rounded-[12px] border-2 border-[#EAEAEA] bg-white px-4 text-sm text-[#111111] focus:outline-none focus:border-[#F9B000] focus:ring-2 focus:ring-[#F9B000]/10 transition-all h-[52px]"
+                        className="w-full rounded-[14px] border-2 border-border bg-background px-4 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-3 focus:ring-ring/10 transition-all h-[52px]"
                       />
                       {errors.drivingLicenseExpiry && (
-                        <p className="text-xs text-[#EF4444]">{errors.drivingLicenseExpiry}</p>
+                        <p className="text-xs text-destructive flex items-center gap-1.5">{errors.drivingLicenseExpiry}</p>
                       )}
                     </div>
                   </div>
@@ -433,7 +456,7 @@ export function SignupPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground">
                     Vehicle Type <span className="text-red-400">*</span>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -442,10 +465,10 @@ export function SignupPage() {
                         key={v.value}
                         type="button"
                         onClick={() => updateField('vehicleType', v.value)}
-                        className={`py-4 px-4 rounded-[12px] text-sm font-semibold border-2 transition-all ${
+                        className={`py-4 px-4 rounded-[14px] text-sm font-semibold border-2 transition-all ${
                           formData.vehicleType === v.value
-                            ? 'border-[#F9B000] bg-[#F9B000]/5 text-[#111111]'
-                            : 'border-[#EAEAEA] text-gray-500 hover:border-gray-300'
+                            ? 'border-saffron bg-saffron/10 text-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:border-muted-foreground/30'
                         }`}
                       >
                         {v.label}
@@ -453,7 +476,7 @@ export function SignupPage() {
                     ))}
                   </div>
                   {errors.vehicleType && (
-                    <p className="text-xs text-[#EF4444]">{errors.vehicleType}</p>
+                    <p className="text-xs text-destructive flex items-center gap-1.5">{errors.vehicleType}</p>
                   )}
                 </div>
 
@@ -466,17 +489,18 @@ export function SignupPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground">
                     Insurance Expiry <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
+                    min={new Date().toISOString().split('T')[0]}
                     value={formData.insuranceExpiry}
                     onChange={(e) => updateField('insuranceExpiry', e.target.value)}
-                    className="w-full rounded-[12px] border-2 border-[#EAEAEA] bg-white px-4 text-sm text-[#111111] focus:outline-none focus:border-[#F9B000] focus:ring-2 focus:ring-[#F9B000]/10 transition-all h-[52px]"
+                    className="w-full rounded-[14px] border-2 border-border bg-background px-4 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-3 focus:ring-ring/10 transition-all h-[52px]"
                   />
                   {errors.insuranceExpiry && (
-                    <p className="text-xs text-[#EF4444]">{errors.insuranceExpiry}</p>
+                    <p className="text-xs text-destructive flex items-center gap-1.5">{errors.insuranceExpiry}</p>
                   )}
                 </div>
 
@@ -486,7 +510,7 @@ export function SignupPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground">
                     Helmet Available? <span className="text-red-400">*</span>
                   </label>
                   <div className="flex gap-3 h-[52px]">
@@ -495,10 +519,10 @@ export function SignupPage() {
                         key={opt}
                         type="button"
                         onClick={() => updateField('helmetAvailable', opt)}
-                        className={`flex-1 rounded-[12px] text-sm font-semibold border-2 transition-all ${
+                        className={`flex-1 rounded-[14px] text-sm font-semibold border-2 transition-all ${
                           formData.helmetAvailable === opt
-                            ? 'border-[#F9B000] bg-[#F9B000]/5 text-[#111111]'
-                            : 'border-[#EAEAEA] text-gray-500 hover:border-gray-300'
+                            ? 'border-saffron bg-saffron/10 text-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:border-muted-foreground/30'
                         }`}
                       >
                         {opt}
@@ -506,7 +530,7 @@ export function SignupPage() {
                     ))}
                   </div>
                   {errors.helmetAvailable && (
-                    <p className="text-xs text-[#EF4444]">{errors.helmetAvailable}</p>
+                    <p className="text-xs text-destructive flex items-center gap-1.5">{errors.helmetAvailable}</p>
                   )}
                 </div>
 
@@ -569,17 +593,17 @@ export function SignupPage() {
                 {/* Basic Info Review */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-base font-semibold text-[#111111]">
+                    <h4 className="text-base font-semibold text-foreground">
                       Basic Information
                     </h4>
                     <button
                       onClick={() => setCurrentStep(0)}
-                      className="text-xs text-[#F9B000] hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs text-saffron hover:underline flex items-center gap-1 font-semibold"
                     >
                       <Edit3 className="h-3 w-3" /> Edit
                     </button>
                   </div>
-                  <div className="bg-gray-50 rounded-[14px] p-5 space-y-3">
+                  <div className="bg-muted rounded-[14px] p-5 space-y-3">
                     <ReviewRow label="Full Name" value={`${formData.firstName} ${formData.lastName}`} />
                     <ReviewRow label="Date of Birth" value={formData.dateOfBirth} />
                     <ReviewRow label="Gender" value={formData.gender} />
@@ -596,17 +620,17 @@ export function SignupPage() {
                 {/* Identity Review */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-base font-semibold text-[#111111]">
+                    <h4 className="text-base font-semibold text-foreground">
                       Identity Verification
                     </h4>
                     <button
                       onClick={() => setCurrentStep(1)}
-                      className="text-xs text-[#F9B000] hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs text-saffron hover:underline flex items-center gap-1 font-semibold"
                     >
                       <Edit3 className="h-3 w-3" /> Edit
                     </button>
                   </div>
-                  <div className="bg-gray-50 rounded-[14px] p-5 space-y-3">
+                  <div className="bg-muted rounded-[14px] p-5 space-y-3">
                     <ReviewRow label="Aadhaar" value={formData.aadhaarNumber.replace(/\d(?=\d{4})/g, 'X')} />
                     <ReviewRow label="PAN" value={formData.panNumber} />
                     <ReviewRow label="Driving License" value={formData.drivingLicenseNumber} />
@@ -617,17 +641,17 @@ export function SignupPage() {
                 {/* Vehicle Review */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-base font-semibold text-[#111111]">
+                    <h4 className="text-base font-semibold text-foreground">
                       Vehicle Details
                     </h4>
                     <button
                       onClick={() => setCurrentStep(2)}
-                      className="text-xs text-[#F9B000] hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs text-saffron hover:underline flex items-center gap-1 font-semibold"
                     >
                       <Edit3 className="h-3 w-3" /> Edit
                     </button>
                   </div>
-                  <div className="bg-gray-50 rounded-[14px] p-5 space-y-3">
+                  <div className="bg-muted rounded-[14px] p-5 space-y-3">
                     <ReviewRow
                       label="Vehicle Type"
                       value={VEHICLE_TYPES.find((v) => v.value === formData.vehicleType)?.label || formData.vehicleType}
@@ -641,17 +665,17 @@ export function SignupPage() {
                 {/* Bank Review */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-base font-semibold text-[#111111]">
+                    <h4 className="text-base font-semibold text-foreground">
                       Bank Details
                     </h4>
                     <button
                       onClick={() => setCurrentStep(3)}
-                      className="text-xs text-[#F9B000] hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs text-saffron hover:underline flex items-center gap-1 font-semibold"
                     >
                       <Edit3 className="h-3 w-3" /> Edit
                     </button>
                   </div>
-                  <div className="bg-gray-50 rounded-[14px] p-5 space-y-3">
+                  <div className="bg-muted rounded-[14px] p-5 space-y-3">
                     <ReviewRow label="Account Holder" value={formData.accountHolderName} />
                     <ReviewRow
                       label="Account Number"
@@ -705,8 +729,8 @@ export function SignupPage() {
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-semibold text-[#111111]">{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold text-foreground">{value}</span>
     </div>
   )
 }

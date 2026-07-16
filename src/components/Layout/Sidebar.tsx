@@ -38,17 +38,17 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
   return (
     <motion.aside
       className={cn(
-        'bg-white border-r border-[#EAEAEA] z-40 flex flex-col h-full flex-shrink-0',
+        'bg-card border-r border-border z-40 flex flex-col h-full flex-shrink-0',
         !isMobile && 'hidden lg:flex'
       )}
       animate={{ width: collapsed ? 80 : 280 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
     >
       {/* Logo */}
-      <div className="flex items-center h-20 px-6 border-b border-[#EAEAEA]">
+      <div className="flex items-center h-20 px-6 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-[#F9B000] flex items-center justify-center flex-shrink-0">
-            <Truck className="h-5 w-5 text-[#111111]" />
+          <div className="w-10 h-10 rounded-xl bg-saffron flex items-center justify-center flex-shrink-0">
+            <Truck className="h-5 w-5 text-ink" />
           </div>
           {!collapsed && (
             <motion.div
@@ -57,8 +57,8 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
               exit={{ opacity: 0 }}
               className="whitespace-nowrap"
             >
-              <p className="text-base font-bold text-[#111111] leading-tight">UdrCrafts</p>
-              <p className="text-[11px] text-gray-400">Partner Portal</p>
+              <p className="text-base font-bold text-foreground leading-tight">UdrCrafts</p>
+              <p className="text-[11px] text-muted-foreground">Partner Portal</p>
             </motion.div>
           )}
         </div>
@@ -76,16 +76,16 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
               className={cn(
                 'relative flex items-center gap-3 px-4 py-3 rounded-[12px] text-sm font-medium transition-all duration-200 group',
                 isActive
-                  ? 'bg-[#F9B000]/10 text-[#111111]'
+                  ? 'bg-saffron/10 text-foreground'
                   : item.disabled
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-500 hover:text-[#111111] hover:bg-gray-50'
+                  ? 'text-muted-foreground/50 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               )}
             >
               {isActive && (
                 <motion.div
                   layoutId="activeNav"
-                  className="absolute inset-0 bg-[#F9B000]/10 rounded-[12px]"
+                  className="absolute inset-0 bg-saffron/10 rounded-[12px]"
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
               )}
@@ -94,7 +94,7 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
                 <span className="relative z-10 whitespace-nowrap">
                   {item.label}
                   {item.disabled && (
-                    <span className="ml-2 text-[10px] text-gray-300 font-medium">Soon</span>
+                    <span className="ml-2 text-[10px] text-muted-foreground/50 font-medium">Soon</span>
                   )}
                 </span>
               )}
@@ -104,10 +104,10 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
       </nav>
 
       {/* Collapse Toggle */}
-      <div className="px-4 py-3 border-t border-[#EAEAEA]">
+      <div className="px-4 py-3 border-t border-border">
         <button
           onClick={onToggle}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-[12px] text-sm text-gray-400 hover:text-[#111111] hover:bg-gray-50 transition-all"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-[12px] text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -124,7 +124,7 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
       <div className="px-4 pb-4">
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-[12px] text-sm font-medium text-gray-500 hover:text-[#EF4444] hover:bg-red-50 transition-all"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-[12px] text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
         >
           <LogOut className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span>Logout</span>}
@@ -140,7 +140,7 @@ export function MobileBottomNav() {
   const mobileNavItems = navItems.filter((item) => !item.disabled).slice(0, 5)
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#EAEAEA] z-40 safe-area-bottom shadow-[0_-1px_0_0_#EAEAEA]">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-40 safe-area-bottom shadow-sm">
       <div className="flex items-center justify-around px-2 py-2">
         {mobileNavItems.map((item) => {
           const isActive = location.pathname === item.path
@@ -150,7 +150,7 @@ export function MobileBottomNav() {
               to={item.path}
               className={cn(
                 'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all',
-                isActive ? 'text-[#F9B000]' : 'text-gray-400'
+                isActive ? 'text-saffron' : 'text-muted-foreground'
               )}
             >
               <item.icon className="h-5 w-5" />
