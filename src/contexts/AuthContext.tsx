@@ -50,7 +50,7 @@ const mapPartnerToUser = (partner: any): User => ({
   status: partner.verificationStatus,
 })
 
-const defaultUser: User = mapPartnerToUser(deliveryPartners[0])
+
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
