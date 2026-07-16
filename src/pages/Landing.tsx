@@ -181,10 +181,12 @@ function Reveal({
   children,
   delay = 0,
   y = 24,
+  className = "",
 }: {
   children: React.ReactNode;
   delay?: number;
   y?: number;
+  className?: string;
 }) {
   return (
     <motion.div
@@ -192,6 +194,7 @@ function Reveal({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.7, delay, ease: [0.22, 1, 0.36, 1] }}
+      className={className}
     >
       {children}
     </motion.div>
@@ -296,7 +299,7 @@ function Hero() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-              className="text-display text-[46px] leading-[1.02] tracking-[-0.03em] sm:text-[64px] lg:text-[84px]"
+              className="text-display text-[46px] leading-[1.15] tracking-[-0.03em] sm:text-[64px] lg:text-[84px]"
             >
               Crafted by
               <br />
@@ -367,7 +370,7 @@ function Hero() {
                 initial={{ opacity: 0, y: 30, x: -20 }}
                 animate={{ opacity: 1, y: 0, x: 0 }}
                 transition={{ delay: 0.6, duration: 0.7 }}
-                className="absolute -left-4 top-16 flex items-center gap-3 rounded-2xl border border-ink/5 bg-background/90 p-3 pr-5 shadow-xl backdrop-blur md:-left-10"
+                className="absolute left-2 top-16 flex items-center gap-3 rounded-2xl border border-ink/5 bg-background/90 p-3 pr-5 shadow-xl backdrop-blur md:-left-4 lg:-left-6"
               >
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-forest/10 text-forest">
                   <Sparkles className="h-5 w-5" />
@@ -383,7 +386,7 @@ function Hero() {
                 initial={{ opacity: 0, y: 30, x: 20 }}
                 animate={{ opacity: 1, y: 0, x: 0 }}
                 transition={{ delay: 0.75, duration: 0.7 }}
-                className="absolute -bottom-6 -right-4 flex items-center gap-3 rounded-2xl border border-ink/5 bg-background/90 p-3 pr-5 shadow-xl backdrop-blur md:-right-8"
+                className="absolute -bottom-6 right-2 flex items-center gap-3 rounded-2xl border border-ink/5 bg-background/90 p-3 pr-5 shadow-xl backdrop-blur md:-right-4"
               >
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-saffron/25 text-clay">
                   <Truck className="h-5 w-5" />
@@ -646,21 +649,19 @@ function SellerStory() {
     <section className="bg-ink text-background grain">
       <Container className="relative py-28 lg:py-36">
         <div className="grid items-center gap-16 lg:grid-cols-12">
-          <Reveal>
-            <div className="lg:col-span-6 relative">
-              <div className="relative overflow-hidden rounded-[32px]">
-                <img
-                  src={artisanPortrait}
-                  alt="Portrait of an Indian artisan"
-                  loading="lazy"
-                  className="h-[560px] w-full object-cover"
-                />
-              </div>
-              <div className="absolute -bottom-6 -right-4 rounded-3xl bg-background px-6 py-5 text-ink shadow-2xl md:right-8">
-                <div className="text-xs uppercase tracking-widest text-ink/50">Sellers earn</div>
-                <div className="mt-1 text-display text-3xl">₹4.2Cr+</div>
-                <div className="text-xs text-ink/50">paid last quarter</div>
-              </div>
+          <Reveal className="lg:col-span-6 relative">
+            <div className="relative overflow-hidden rounded-[32px]">
+              <img
+                src={artisanPortrait}
+                alt="Portrait of an Indian artisan"
+                loading="lazy"
+                className="h-[560px] w-full object-cover"
+              />
+            </div>
+            <div className="absolute -bottom-6 right-2 rounded-3xl bg-background px-6 py-5 text-ink shadow-2xl md:right-8">
+              <div className="text-xs uppercase tracking-widest text-ink/50">Sellers earn</div>
+              <div className="mt-1 text-display text-3xl">₹4.2Cr+</div>
+              <div className="text-xs text-ink/50">paid last quarter</div>
             </div>
           </Reveal>
 
@@ -714,18 +715,17 @@ function Delivery() {
     <section className="py-28 lg:py-36">
       <Container>
         <div className="grid gap-6 lg:grid-cols-12">
-          <Reveal>
-            <div className="lg:col-span-7 relative overflow-hidden rounded-[32px] bg-cream p-10 lg:p-14">
-              <Eyebrow>From local markets</Eyebrow>
-              <h2 className="mt-4 text-display text-4xl leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-                From a village loom
-                <br />
-                to a <span className="text-serif italic text-terracotta">home in Oslo.</span>
-              </h2>
-              <p className="mt-6 max-w-md text-ink/60">
-                We consolidate, quality-check, and ship every order through insured global
-                partners — with plastic-free packaging designed in-house.
-              </p>
+          <Reveal className="lg:col-span-7 relative overflow-hidden rounded-[32px] bg-cream p-10 lg:p-14">
+            <Eyebrow>From local markets</Eyebrow>
+            <h2 className="mt-4 text-display text-4xl leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+              From a village loom
+              <br />
+              to a <span className="text-serif italic text-terracotta">home in Oslo.</span>
+            </h2>
+            <p className="mt-6 max-w-md text-ink/60">
+              We consolidate, quality-check, and ship every order through insured global
+              partners — with plastic-free packaging designed in-house.
+            </p>
 
               <div className="mt-10 grid grid-cols-3 gap-6 border-t border-ink/10 pt-8">
                 {[
@@ -757,24 +757,21 @@ function Delivery() {
                 <circle cx="20" cy="150" r="6" fill="currentColor" />
                 <circle cx="580" cy="60" r="6" fill="currentColor" />
               </svg>
-            </div>
           </Reveal>
 
-          <Reveal delay={0.1}>
-            <div className="lg:col-span-5 relative overflow-hidden rounded-[32px]">
-              <img
-                src={storyPackaging}
-                alt="Handcrafted UdrCrafts package with textile and brass"
-                loading="lazy"
-                className="h-full min-h-[420px] w-full object-cover"
-              />
-              <div className="absolute inset-x-6 bottom-6 rounded-2xl bg-background/90 p-5 backdrop-blur">
-                <div className="text-xs uppercase tracking-widest text-ink/50">
-                  Signature packaging
-                </div>
-                <div className="mt-1 text-display text-lg">
-                  Kraft, jute, marigold. Every parcel a keepsake.
-                </div>
+          <Reveal delay={0.1} className="lg:col-span-5 relative overflow-hidden rounded-[32px]">
+            <img
+              src={storyPackaging}
+              alt="Handcrafted UdrCrafts package with textile and brass"
+              loading="lazy"
+              className="h-full min-h-[420px] w-full object-cover"
+            />
+            <div className="absolute inset-x-6 bottom-6 rounded-2xl bg-background/90 p-5 backdrop-blur">
+              <div className="text-xs uppercase tracking-widest text-ink/50">
+                Signature packaging
+              </div>
+              <div className="mt-1 text-display text-lg">
+                Kraft, jute, marigold. Every parcel a keepsake.
               </div>
             </div>
           </Reveal>
@@ -844,17 +841,15 @@ function FAQ() {
     <section className="py-28 lg:py-36">
       <Container>
         <div className="grid gap-16 lg:grid-cols-12">
-          <Reveal>
-            <div className="lg:col-span-5">
-              <Eyebrow>Questions</Eyebrow>
-              <h2 className="mt-4 text-display text-4xl leading-[1.05] tracking-tight sm:text-5xl">
-                Everything you'd like
-                <span className="text-serif italic text-terracotta"> to know.</span>
-              </h2>
-              <p className="mt-6 max-w-sm text-ink/60">
-                Still curious? Our concierge team replies within 4 hours, in 8 languages.
-              </p>
-            </div>
+          <Reveal className="lg:col-span-5">
+            <Eyebrow>Questions</Eyebrow>
+            <h2 className="mt-4 text-display text-4xl leading-[1.05] tracking-tight sm:text-5xl">
+              Everything you'd like
+              <span className="text-serif italic text-terracotta"> to know.</span>
+            </h2>
+            <p className="mt-6 max-w-sm text-ink/60">
+              Still curious? Our concierge team replies within 4 hours, in 8 languages.
+            </p>
           </Reveal>
 
           <div className="lg:col-span-7">
