@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Container } from '@/components/ui/Container'
 import {
-  Truck, Shield, Globe, Award, Heart, CheckCircle2, Star, IndianRupee, ArrowRight
+  Truck, Shield, Globe, Heart, Star, IndianRupee, ArrowRight
 } from 'lucide-react'
 
 const features = [
