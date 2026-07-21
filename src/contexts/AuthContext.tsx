@@ -1,6 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
-import { deliveryPartners } from '@/data/partners'
-
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 export interface User {
   id: string
   firstName: string
@@ -34,9 +32,9 @@ export interface User {
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
-  login: (phone: string, password: string) => Promise<void>
+  login: (emailOrPhone: string, password: string, role?: string) => Promise<void>
   loginWithOTP: (phone: string, otp: string) => Promise<void>
-  signup: (data: Record<string, unknown>) => Promise<void>
+  signup: (data: Record<string, unknown>, role?: string) => Promise<void>
   logout: () => void
   updateUser: (data: Partial<User>) => void
 }
@@ -56,92 +54,72 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-
-  const login = useCallback(async (phone: string, _password: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    // Clean phone number to match format in data (e.g., removing spaces/country code)
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10)
-    
-    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]') as User[]
-    const localUser = registeredUsers.find(u => u.phone === cleanPhone)
-    
-    if (localUser) {
-      setUser(localUser)
-      return
+  
+  // Load user on startup if token exists
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      fetch('http://localhost:3001/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.user) setUser(data.user)
+        else localStorage.removeItem('token')
+      })
+      .catch(console.error)
     }
+  }, [])
 
-    const partner = deliveryPartners.find(p => p.mobile === cleanPhone)
-    if (partner) {
-      setUser(mapPartnerToUser(partner))
-      return
-    }
-    
-    throw new Error('Account not found. Please create a new account.')
+  const login = useCallback(async (emailOrPhone: string, password: string, role: string = 'delivery') => {
+    let endpoint = '/api/auth/login'
+    if (role === 'customer' || role === 'admin') endpoint = '/api/auth/user/login'
+    if (role === 'seller') endpoint = '/api/auth/seller/login'
+
+    const res = await fetch(`http://localhost:3001${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailOrPhone, password, phone: emailOrPhone })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to login')
+    localStorage.setItem('token', data.token)
+    setUser(data.user)
   }, [])
 
   const loginWithOTP = useCallback(async (phone: string, _otp: string) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10)
-    
-    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]') as User[]
-    const localUser = registeredUsers.find(u => u.phone === cleanPhone)
-    
-    if (localUser) {
-      setUser(localUser)
-      return
-    }
-
-    const partner = deliveryPartners.find(p => p.mobile === cleanPhone)
-    if (partner) {
-      setUser(mapPartnerToUser(partner))
-      return
-    }
-    
-    throw new Error('Account not found. Please create a new account.')
+    const res = await fetch('http://localhost:3001/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to login')
+    localStorage.setItem('token', data.token)
+    setUser(data.user)
   }, [])
 
-  const signup = useCallback(async (data: Record<string, unknown>) => {
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    
-    const partnerId = `UDRSP${Math.floor(1000 + Math.random() * 9000)}`
-    const newUser: User = {
-      id: partnerId,
-      partnerId: partnerId,
-      firstName: (data.firstName as string) || '',
-      lastName: (data.lastName as string) || '',
-      fullName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-      email: (data.email as string) || '',
-      phone: (data.mobileNumber as string)?.replace(/\D/g, '').slice(-10) || '',
-      status: 'Pending',
-      mobile: (data.mobileNumber as string) || '',
-      currentAddress: (data.currentAddress as string) || '',
-      permanentAddress: (data.permanentAddress as string) || '',
-      state: (data.state as string) || '',
-      district: (data.district as string) || '',
-      city: (data.city as string) || '',
-      pincode: (data.pincode as string) || '',
-      emergencyContactName: (data.emergencyContactName as string) || '',
-      emergencyContactNumber: (data.emergencyContactNumber as string) || '',
-      vehicleType: (data.vehicleType as string) || '',
-      vehicleNumber: (data.vehicleRegistrationNumber as string) || '',
-      dateOfBirth: (data.dateOfBirth as string) || '',
-      gender: (data.gender as string) || '',
-      dateJoined: new Date().toISOString().split('T')[0],
-      rating: 0,
-      deliveries: 0,
-      earnings: 0,
-      todayDeliveries: 0,
-    }
-    
-    const existing = JSON.parse(localStorage.getItem('registeredUsers') || '[]')
-    existing.push(newUser)
-    localStorage.setItem('registeredUsers', JSON.stringify(existing))
-    
-    setUser(newUser)
+  const signup = useCallback(async (data: Record<string, unknown>, role: string = 'delivery') => {
+    let endpoint = '/api/auth/signup'
+    if (role === 'customer' || role === 'admin') endpoint = '/api/auth/user/signup'
+    if (role === 'seller') endpoint = '/api/auth/seller/signup'
+
+    // Inject role into signup data so backend knows it's an admin if requested
+    const requestData = { ...data, role: role === 'admin' ? 'ADMIN' : 'CUSTOMER' }
+
+    const res = await fetch(`http://localhost:3001${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestData)
+    })
+    const resData = await res.json()
+    if (!res.ok) throw new Error(resData.error || 'Failed to signup')
+    localStorage.setItem('token', resData.token)
+    setUser(resData.user)
   }, [])
 
   const logout = useCallback(() => {
+    localStorage.removeItem('token')
     setUser(null)
   }, [])
 

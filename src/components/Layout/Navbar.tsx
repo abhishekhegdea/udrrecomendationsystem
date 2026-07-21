@@ -15,11 +15,40 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
 
-  const notifications = [
-    { id: 1, title: 'New order assigned', message: 'Order #UDC-4891 ready for pickup', time: '5m ago', unread: true },
-    { id: 2, title: 'Payment received', message: '₹2,400 credited to your wallet', time: '1h ago', unread: true },
-    { id: 3, title: 'Document verified', message: 'Your Aadhaar has been verified', time: '1d ago', unread: false },
-  ]
+  const getRoleNotifications = (role?: string) => {
+    switch(role) {
+      case 'ADMIN':
+        return [
+          { id: 1, title: 'New Seller Registration', message: 'Kashmir Looms is waiting for approval', time: '10m ago', unread: true },
+          { id: 2, title: 'High Traffic Alert', message: 'Unusual spike in user registrations', time: '2h ago', unread: true },
+          { id: 3, title: 'System Update', message: 'Database backup completed successfully', time: '1d ago', unread: false },
+        ]
+      case 'SELLER':
+        return [
+          { id: 1, title: 'New Order Received', message: 'Order #UDC-8821 needs packaging', time: '2m ago', unread: true },
+          { id: 2, title: 'Payout Processed', message: '₹14,500 transferred to your bank account', time: '5h ago', unread: true },
+          { id: 3, title: 'Low Inventory', message: 'Blue Pottery Vase is almost out of stock', time: '1d ago', unread: false },
+        ]
+      case 'DELIVERY':
+        return [
+          { id: 1, title: 'New Order Assigned', message: 'Order #UDC-4891 ready for pickup at Sector 4', time: '5m ago', unread: true },
+          { id: 2, title: 'Payment Received', message: '₹450 credited to your wallet for recent delivery', time: '1h ago', unread: true },
+          { id: 3, title: 'Document Verified', message: 'Your Driving License has been approved', time: '1d ago', unread: false },
+        ]
+      case 'CUSTOMER':
+        return [
+          { id: 1, title: 'Order Out for Delivery', message: 'Order #UDC-1102 will arrive today by 6 PM', time: '1h ago', unread: true },
+          { id: 2, title: 'Order Confirmed', message: 'Your payment for Order #UDC-1102 was successful', time: '1d ago', unread: false },
+          { id: 3, title: 'Welcome to UdrCrafts', message: 'Thanks for joining our artisan community!', time: '2d ago', unread: false },
+        ]
+      default:
+        return [
+          { id: 1, title: 'Welcome', message: 'Welcome to UdrCrafts dashboard', time: 'Just now', unread: true },
+        ]
+    }
+  }
+
+  const notifications = getRoleNotifications(user?.role)
 
   return (
     <header className="h-20 bg-background border-b border-border flex items-center justify-between px-6 lg:px-8 sticky top-0 z-30 shadow-sm">
@@ -126,7 +155,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
               <p className="text-sm font-semibold text-foreground leading-tight">
                 {user?.firstName || 'User'}
               </p>
-              <p className="text-[11px] text-muted-foreground">Verified Partner</p>
+              <p className="text-[11px] text-muted-foreground capitalize">{user?.role ? user.role.toLowerCase() : 'User'}</p>
             </div>
             <ChevronDown className="hidden md:block h-4 w-4 text-muted-foreground" />
           </button>
@@ -145,8 +174,8 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                     {user?.firstName?.charAt(0) || 'U'}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">{user?.fullName}</p>
-                    <p className="text-xs text-muted-foreground">{user?.partnerId}</p>
+                    <p className="text-sm font-semibold text-foreground">{user?.firstName} {user?.lastName}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
                   </div>
                 </div>
                 <div className="p-2">

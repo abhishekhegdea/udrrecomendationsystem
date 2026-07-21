@@ -1,208 +1,258 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import { Truck, ArrowRight, Smartphone } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import { User, ShieldCheck, Truck, ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+
+type Role = 'customer' | 'seller' | 'admin' | 'delivery' | null
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const { login, loginWithOTP, isAuthenticated } = useAuth()
-  const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
-  const [otp, setOtp] = useState('')
-  const [showOTP, setShowOTP] = useState(false)
+  const { login, signup } = useAuth()
+  
+  const [role, setRole] = useState<Role>(null)
+  const [isLogin, setIsLogin] = useState(true)
+  
+  // Form State
+  const [formData, setFormData] = useState({
+    firstName: '', lastName: '', email: '', phone: '', password: '',
+    // Seller
+    businessName: '', gstNumber: '',
+    // Partner
+    dateOfBirth: '', address: '', vehicleType: '', vehicleNumber: '', rcBook: '', drivingLicense: '', vehicleInsurance: '', emergencyContactName: '', emergencyContactNumber: '',
+    // Shared Financials & KYC
+    bankAccount: '', ifscCode: '', upiId: '', panNumber: '', aadhaarNumber: ''
+  })
+
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [otpSent, setOtpSent] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [showLoginForm, setShowLoginForm] = useState(false)
 
-  useEffect(() => {
-    if (isAuthenticated) navigate('/dashboard')
-  }, [isAuthenticated, navigate])
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+  
+  if (!role) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+        <Link to="/" className="absolute top-8 left-8 flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Back to Store
+        </Link>
+        
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-display font-bold text-primary mb-3">Welcome to UdrCrafts</h1>
+          <p className="text-muted-foreground">Select how you want to continue</p>
+        </div>
+        
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl w-full">
+          <button 
+            onClick={() => { setRole('customer'); setIsLogin(true); setError(''); }}
+            className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-card border-2 border-transparent hover:border-primary hover:shadow-xl transition-all group"
+          >
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors text-primary">
+              <User className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold">Shopper</h2>
+            <p className="text-sm text-muted-foreground text-center">Discover and buy handcrafted artisanal products.</p>
+          </button>
+          
+          <button 
+            onClick={() => { setRole('seller'); setIsLogin(true); setError(''); }}
+            className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-card border-2 border-transparent hover:border-accent hover:shadow-xl transition-all group"
+          >
+            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent group-hover:text-accent-foreground transition-colors text-accent">
+              <ShoppingBag className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold">Artisan / Seller</h2>
+            <p className="text-sm text-muted-foreground text-center">Manage your storefront and fulfill orders.</p>
+          </button>
+          
+          <button 
+            onClick={() => { setRole('delivery'); setIsLogin(true); setError(''); }}
+            className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-card border-2 border-transparent hover:border-saffron hover:shadow-xl transition-all group"
+          >
+            <div className="w-16 h-16 rounded-full bg-saffron/10 flex items-center justify-center group-hover:bg-saffron group-hover:text-primary-foreground transition-colors text-saffron">
+              <Truck className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold">Delivery Partner</h2>
+            <p className="text-sm text-muted-foreground text-center">Fulfill orders and manage your routes.</p>
+          </button>
 
-  const handleLogin = async (e: React.FormEvent) => {
+          <button 
+            onClick={() => { setRole('admin'); setIsLogin(true); setError(''); }}
+            className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-card border-2 border-transparent hover:border-forest hover:shadow-xl transition-all group"
+          >
+            <div className="w-16 h-16 rounded-full bg-forest/10 flex items-center justify-center group-hover:bg-forest group-hover:text-primary-foreground transition-colors text-forest">
+              <ShieldCheck className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold">Administrator</h2>
+            <p className="text-sm text-muted-foreground text-center">Manage platform operations.</p>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newErrors: Record<string, string> = {}
-    if (!phone || phone.length < 10) newErrors.phone = 'Enter a valid mobile number'
-    if (!showOTP && !password) newErrors.password = 'Password is required'
-    if (showOTP && otpSent && (!otp || otp.length < 6)) newErrors.otp = 'Enter a valid 6-digit OTP'
-    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return }
-
+    setError('')
     setLoading(true)
-    setErrors({})
+
     try {
-      if (showOTP) {
-        if (!otpSent) { await new Promise((r) => setTimeout(r, 1000)); setOtpSent(true) }
-        else { await loginWithOTP(phone, otp); navigate('/dashboard') }
-      } else { await login(phone, password); navigate('/dashboard') }
-    } catch { setErrors({ form: 'Invalid credentials. Please try again.' }) }
-    finally { setLoading(false) }
+      if (isLogin) {
+        await login(formData.email, formData.password, role)
+      } else {
+        await signup(formData, role)
+      }
+      
+      if (role === 'admin') navigate('/admin')
+      else if (role === 'seller') navigate('/seller')
+      else if (role === 'delivery') navigate('/delivery')
+      else navigate('/') 
+      
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div 
-      className="min-h-screen flex items-center justify-center p-6 bg-cover bg-center bg-no-repeat relative"
-      style={{ backgroundImage: 'url(/images/login-bg.jpg)' }}
-    >
-      {/* Dynamic overlay for contrast */}
-      <div className={`absolute inset-0 transition-all duration-1000 ${showLoginForm ? 'bg-black/50 backdrop-blur-[4px]' : 'bg-black/10'}`} />
-      
-      <AnimatePresence mode="wait">
-        {!showLoginForm ? (
-          <motion.div 
-            key="intro"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
-            transition={{ duration: 0.6 }}
-            className="relative z-10 flex flex-col items-center justify-end h-full w-full pb-20 sm:pb-32"
-          >
-            <div className="text-center mb-10">
-              <h1 className="text-5xl sm:text-7xl font-bold text-white tracking-tight drop-shadow-2xl mb-4" style={{ fontFamily: 'var(--font-display)' }}>Deliver with UdrCrafts</h1>
-              <p className="text-white text-lg sm:text-xl drop-shadow-lg font-medium">Handcrafted with Heart</p>
-            </div>
-            <Button 
-              size="lg" 
-              onClick={() => setShowLoginForm(true)}
-              className="bg-[#F9B000] hover:bg-[#E09E00] text-[#111111] rounded-full px-10 py-7 text-lg font-bold shadow-[0_20px_50px_-15px_rgba(249,176,0,0.7)] transition-all hover:scale-105"
-            >
-              Start your journey <ArrowRight className="ml-3 h-5 w-5" />
-            </Button>
-          </motion.div>
-        ) : (
-          <motion.div 
-            key="form"
-            initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-            animate={{ opacity: 1, scale: 1, y: 0 }} 
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.5 }} 
-            className="relative z-10 w-full max-w-[440px] bg-white/20 backdrop-blur-2xl border border-white/30 shadow-2xl rounded-[32px] p-8 sm:p-10"
-          >
-            {/* Close button */}
-            <button 
-              type="button"
-              onClick={() => setShowLoginForm(false)}
-              className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
+    <div className="min-h-screen bg-background flex flex-col items-center py-10 px-6 overflow-y-auto">
+      <button 
+        onClick={() => setRole(null)} 
+        className="absolute top-8 left-8 flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" /> Change Role
+      </button>
 
-            {/* Logo */}
-            <div className="flex items-center gap-3 mb-8 justify-center">
-              <div className="w-12 h-12 rounded-[14px] bg-[#F9B000] flex items-center justify-center shadow-lg">
-                <Truck className="h-6 w-6 text-[#111111]" />
-              </div>
-              <div className="text-left">
-                <h1 className="text-xl font-bold text-white tracking-tight">UdrCrafts</h1>
-                <p className="text-[11px] text-white/80 uppercase tracking-widest">Partner Portal</p>
-              </div>
-            </div>
-
-        {/* Heading */}
-        <div className="mb-8 text-center">
-          <h2 className="text-3xl font-bold text-white mb-2">{showOTP ? 'Verify OTP' : 'Welcome Back'}</h2>
-          <p className="text-white/80 text-sm">
-            {showOTP ? (otpSent ? 'Enter the 6-digit OTP sent to your registered mobile number' : 'Enter your mobile number to receive a one-time OTP') : 'Sign in to access your partner dashboard and manage deliveries.'}
+      <div className={`w-full ${isLogin ? 'max-w-md' : 'max-w-4xl'} bg-card border border-border shadow-2xl rounded-[32px] p-10 mt-10`}>
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-foreground capitalize">{role} {isLogin ? 'Login' : 'Registration'}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isLogin ? 'Enter your credentials to access your account' : 'Provide your details to register as a ' + role}
           </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-white/90 ml-1">Mobile Number</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <span className="text-white/60 font-medium text-sm">+91</span>
-              </div>
-              <input 
-                type="tel" 
-                placeholder="98765 43210" 
-                value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} 
-                required 
-                className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] pl-[3.25rem] pr-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner font-medium"
-              />
-            </div>
-            {errors.phone && <p className="text-xs text-red-300 ml-1">{errors.phone}</p>}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-medium">
+            {error}
           </div>
+        )}
 
-          <AnimatePresence mode="wait">
-            {showOTP ? (
-              <motion.div key="otp" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
-                {otpSent && (
-                  <div className="space-y-1.5 pt-1">
-                    <label className="text-sm font-medium text-white/90 ml-1">One-Time Password</label>
-                    <input 
-                      type="text" 
-                      placeholder="000 000" 
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
-                      required 
-                      className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] px-4 text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner text-center tracking-[0.5em] font-bold text-lg"
-                    />
-                    <div className="flex justify-between items-center mx-1">
-                      {errors.otp ? <p className="text-xs text-red-300">{errors.otp}</p> : <p className="text-[11px] text-white/50">OTP sent to +91 XXXXX{phone.slice(-4) || 'XXXX'}</p>}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div key="password" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                <div className="space-y-1.5 pt-1">
-                  <label className="text-sm font-medium text-white/90 ml-1">Password</label>
-                  <input 
-                    type="password" 
-                    placeholder="••••••••" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)} 
-                    required 
-                    className="w-full h-[52px] bg-white/10 border border-white/20 rounded-[16px] px-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#F9B000] focus:border-transparent transition-all backdrop-blur-sm shadow-inner tracking-widest text-lg font-medium"
-                  />
-                  <div className="flex justify-between items-center mx-1">
-                    {errors.password ? <p className="text-xs text-red-300">{errors.password}</p> : <p className="text-[11px] text-white/50">Must be at least 8 characters</p>}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {errors.form && (
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="text-sm text-red-800 bg-red-100/90 backdrop-blur-md px-4 py-3 rounded-[14px] border border-red-200">{errors.form}</motion.p>
+        <form className="space-y-6" onSubmit={handleSubmit}>
+          
+          {/* LOGIN VIEW */}
+          {isLogin && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground ml-1">Email</label>
+                <input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full h-12 bg-muted border border-border rounded-xl px-4 focus:ring-2 focus:ring-primary outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground ml-1">Password</label>
+                <input type="password" name="password" required value={formData.password} onChange={handleInputChange} className="w-full h-12 bg-muted border border-border rounded-xl px-4 focus:ring-2 focus:ring-primary outline-none" />
+              </div>
+            </div>
           )}
 
-          <Button type="submit" fullWidth size="md" loading={loading} className="h-[52px] bg-[#111111] hover:bg-[#111111]/90 text-white rounded-[14px] mt-2">
-            {showOTP && otpSent ? 'Verify & Login' : showOTP ? 'Send OTP' : 'Login'}
-          </Button>
+          {/* SIGNUP VIEW */}
+          {!isLogin && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* Common Details (All Roles) */}
+              <div className="space-y-4">
+                <h3 className="font-bold border-b border-border pb-2">Personal Details</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1"><label className="text-xs font-medium">First Name</label><input type="text" name="firstName" required value={formData.firstName} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                  <div className="space-y-1"><label className="text-xs font-medium">Last Name</label><input type="text" name="lastName" required value={formData.lastName} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                </div>
+                <div className="space-y-1"><label className="text-xs font-medium">Email</label><input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                <div className="space-y-1"><label className="text-xs font-medium">Phone</label><input type="tel" name="phone" required value={formData.phone} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                <div className="space-y-1"><label className="text-xs font-medium">Password</label><input type="password" name="password" required value={formData.password} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                
+                {(role === 'seller' || role === 'delivery') && (
+                  <>
+                    <h3 className="font-bold border-b border-border pb-2 pt-4">Financial Details</h3>
+                    <div className="space-y-1"><label className="text-xs font-medium">Bank Account Number</label><input type="text" name="bankAccount" required value={formData.bankAccount} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1"><label className="text-xs font-medium">IFSC Code</label><input type="text" name="ifscCode" required value={formData.ifscCode} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium">UPI ID</label><input type="text" name="upiId" required value={formData.upiId} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    </div>
+                  </>
+                )}
+              </div>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/20" /></div>
-            <div className="relative flex justify-center"><span className="bg-transparent px-4 text-xs text-white/60 uppercase font-medium backdrop-blur-md rounded-full">or</span></div>
-          </div>
+              {/* Role Specific Columns */}
+              <div className="space-y-4">
+                {role === 'customer' && (
+                  <div className="bg-primary/5 rounded-xl p-6 text-center text-muted-foreground flex flex-col items-center justify-center h-full">
+                    <User className="h-12 w-12 text-primary opacity-50 mb-4" />
+                    <p>Join UdrCrafts to support local artisans and purchase beautiful handcrafted products directly from the source.</p>
+                  </div>
+                )}
 
-          <div className="flex items-center justify-between gap-4">
-            <Button type="button" variant="ghost" fullWidth size="sm" onClick={() => setShowOTP(!showOTP)} className="bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-[14px] flex-1">
-              <Smartphone className="h-4 w-4 mr-2" />
-              {showOTP ? 'Use Password' : 'Login via OTP'}
-            </Button>
+                {role === 'seller' && (
+                  <>
+                    <h3 className="font-bold border-b border-border pb-2">Business & KYC</h3>
+                    <div className="space-y-1"><label className="text-xs font-medium">Shop / Business Name</label><input type="text" name="businessName" required value={formData.businessName} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    <div className="space-y-1"><label className="text-xs font-medium">GST Number (Optional)</label><input type="text" name="gstNumber" value={formData.gstNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-1"><label className="text-xs font-medium">PAN Number</label><input type="text" name="panNumber" required value={formData.panNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium">Aadhaar Number</label><input type="text" name="aadhaarNumber" required value={formData.aadhaarNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    </div>
+                  </>
+                )}
 
-            {!showOTP && (
-              <button type="button" className="text-xs text-white/80 hover:text-white hover:underline font-medium transition-colors flex-1 text-right">
-                Forgot Password?
-              </button>
-            )}
-          </div>
+                {role === 'delivery' && (
+                  <>
+                    <h3 className="font-bold border-b border-border pb-2">Vehicle & KYC</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">Vehicle Type</label>
+                        <select name="vehicleType" required value={formData.vehicleType} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none">
+                          <option value="">Select...</option>
+                          <option value="Bike">Two Wheeler</option>
+                          <option value="Scooter">Scooter</option>
+                          <option value="Van">Delivery Van</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1"><label className="text-xs font-medium">Vehicle Reg Number</label><input type="text" name="vehicleNumber" required value={formData.vehicleNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-1"><label className="text-xs font-medium">PAN Number</label><input type="text" name="panNumber" required value={formData.panNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium">Aadhaar Number</label><input type="text" name="aadhaarNumber" required value={formData.aadhaarNumber} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-1"><label className="text-xs font-medium">Driving License No.</label><input type="text" name="drivingLicense" required value={formData.drivingLicense} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium">RC Book No.</label><input type="text" name="rcBook" required value={formData.rcBook} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+            </div>
+          )}
+          
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full h-12 mt-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-70"
+          >
+            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Complete Registration')}
+          </button>
         </form>
 
-          <div className="mt-8 pt-8 border-t border-white/20">
-            <p className="text-sm text-white/80 text-center mb-4">New to UdrCrafts? Join as a delivery partner today.</p>
-            <Button type="button" variant="secondary" fullWidth size="md" onClick={() => navigate('/signup')} className="bg-[#F9B000] hover:bg-[#E09E00] text-[#111111] rounded-[14px] font-semibold border-none">
-              Create Account <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
-          </div>
-        </motion.div>
-        )}
-      </AnimatePresence>
+        <div className="mt-8 text-center text-sm text-muted-foreground">
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          <button 
+            onClick={() => setIsLogin(!isLogin)} 
+            className="text-primary font-semibold hover:underline"
+          >
+            {isLogin ? 'Sign up here' : 'Sign in here'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

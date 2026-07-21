@@ -5,16 +5,36 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/contexts/AuthContext'
-import { DUMMY_USER } from '@/lib/constants'
 import {
   User, Mail, Phone, MapPin, Calendar, Car, PhoneCall,
-  Download, Edit3, Truck, Award, Star, CheckCircle2, Shield,
+  Download, Edit3, Truck, Award, Star, CheckCircle2, Shield, ShoppingBag
 } from 'lucide-react'
 
 export function ProfilePage() {
   const { user, updateUser } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
-  const profileData = { ...DUMMY_USER, ...user }
+  
+  // Construct dynamic profile data without falling back to a dummy delivery partner
+  const profileData = {
+    fullName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'User',
+    email: user?.email || '',
+    phone: user?.phone || 'Not Provided',
+    currentAddress: user?.currentAddress || 'Not Provided',
+    city: user?.city || 'Not Provided',
+    state: user?.state || 'Not Provided',
+    pincode: user?.pincode || 'Not Provided',
+    vehicleType: user?.vehicleType || 'Not Provided',
+    vehicleNumber: user?.vehicleNumber || 'Not Provided',
+    emergencyContactName: user?.emergencyContactName || 'Not Provided',
+    emergencyContactNumber: user?.emergencyContactNumber || 'Not Provided',
+    dateJoined: user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Recently',
+    partnerId: user?.id ? `ID-${user.id.substring(0, 6).toUpperCase()}` : 'N/A',
+    status: user?.status || 'Verified',
+    rating: user?.rating || 4.5,
+    earnings: user?.earnings || 0,
+    deliveries: user?.deliveries || 0,
+    orders: user?.orders || 0,
+  }
 
   const [formData, setFormData] = useState({
     email: profileData.email || '',
@@ -40,10 +60,9 @@ export function ProfilePage() {
       title: 'Personal Information', icon: User,
       items: [
         { icon: User, label: 'Full Name', value: profileData.fullName },
-        { icon: Award, label: 'Partner ID', value: profileData.partnerId },
+        ...(user?.role !== 'CUSTOMER' ? [{ icon: Award, label: 'Profile ID', value: profileData.partnerId }] : []),
         { icon: Mail, label: 'Email Address', value: profileData.email },
         { icon: Phone, label: 'Phone Number', value: profileData.phone },
-        { icon: Calendar, label: 'Date of Birth', value: profileData.dateOfBirth || '15 Mar 1995' },
       ],
     },
     {
@@ -55,14 +74,13 @@ export function ProfilePage() {
         { icon: MapPin, label: 'Pincode', value: profileData.pincode },
       ],
     },
-    {
+    ...(user?.role === 'DELIVERY' ? [{
       title: 'Vehicle & Emergency', icon: Shield,
       items: [
         { icon: Car, label: 'Vehicle', value: `${profileData.vehicleType} — ${profileData.vehicleNumber}` },
-        { icon: Calendar, label: 'Date Joined', value: profileData.dateJoined },
         { icon: PhoneCall, label: 'Emergency Contact', value: `${profileData.emergencyContactName} (${profileData.emergencyContactNumber})` },
       ],
-    },
+    }] : [])
   ]
 
   return (
@@ -95,24 +113,29 @@ export function ProfilePage() {
                 </span>
               </div>
               <p className="text-ink/80 text-sm mt-3 flex items-center gap-1.5 justify-center sm:justify-start font-medium">
-                <Truck className="h-4 w-4 text-ink" />
-                Shipping Partner since {profileData.dateJoined || '15 Jan 2024'}
+                {user?.role === 'SELLER' && <><Award className="h-4 w-4 text-ink" /> Artisan Seller since {profileData.dateJoined}</>}
+                {user?.role === 'DELIVERY' && <><Truck className="h-4 w-4 text-ink" /> Shipping Partner since {profileData.dateJoined}</>}
+                {user?.role === 'CUSTOMER' && <><ShoppingBag className="h-4 w-4 text-ink" /> Member since {profileData.dateJoined}</>}
+                {user?.role === 'ADMIN' && <><Shield className="h-4 w-4 text-ink" /> System Administrator</>}
               </p>
             </div>
           </div>
-          {/* Stats mini bar */}
-          <div className="mt-6 pt-6 border-t border-white/20 flex items-center justify-center sm:justify-start gap-8">
-            {[
-              { value: (profileData.deliveries ?? 0).toLocaleString(), label: 'Deliveries' },
-              { value: '₹' + (profileData.earnings ?? 0).toLocaleString(), label: 'Earnings' },
-              { value: (profileData.rating ?? 0) + '★', label: 'Rating' },
-            ].map((s) => (
-              <div key={s.label} className="text-center">
-                <p className="text-lg font-bold text-ink" style={{ fontFamily: 'var(--font-display)' }}>{s.value}</p>
-                <p className="text-[10px] text-ink/70 uppercase tracking-wider">{s.label}</p>
-              </div>
-            ))}
-          </div>
+          {/* Stats mini bar (Only for Sellers/Delivery) */}
+          {user?.role !== 'CUSTOMER' && user?.role !== 'ADMIN' && (
+            <div className="mt-6 pt-6 border-t border-white/20 flex items-center justify-center sm:justify-start gap-8">
+              {[
+                ...(user?.role === 'DELIVERY' ? [{ value: (profileData.deliveries ?? 0).toLocaleString(), label: 'Deliveries' }] : []),
+                ...(user?.role === 'SELLER' ? [{ value: (profileData.orders ?? 0).toLocaleString(), label: 'Orders' }] : []),
+                { value: '₹' + (profileData.earnings ?? 0).toLocaleString(), label: 'Earnings' },
+                { value: (profileData.rating ?? 0) + '★', label: 'Rating' },
+              ].map((s) => (
+                <div key={s.label} className="text-center">
+                  <p className="text-lg font-bold text-ink" style={{ fontFamily: 'var(--font-display)' }}>{s.value}</p>
+                  <p className="text-[10px] text-ink/70 uppercase tracking-wider">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <CardContent className="p-6 lg:p-8">
@@ -154,24 +177,28 @@ export function ProfilePage() {
               <Input label="Pincode" value={formData.pincode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, pincode: e.target.value })} />
             </div>
 
-            <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">Vehicle Details</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-               <div className="space-y-2">
-                 <label className="text-[13px] font-medium text-muted-foreground ml-1">Vehicle Type</label>
-                 <select 
-                   value={formData.vehicleType}
-                   onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
-                   className="flex h-[52px] w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground"
-                 >
-                   <option value="Bike">Bike</option>
-                   <option value="Scooter">Scooter</option>
-                   <option value="Bicycle">Bicycle</option>
-                   <option value="Electric Vehicle">Electric Vehicle</option>
-                   <option value="Car">Car</option>
-                 </select>
-               </div>
-               <Input label="Vehicle Number" value={formData.vehicleNumber} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, vehicleNumber: e.target.value })} />
-            </div>
+            {user?.role !== 'SELLER' && (
+              <>
+                <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">Vehicle Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                   <div className="space-y-2">
+                     <label className="text-[13px] font-medium text-muted-foreground ml-1">Vehicle Type</label>
+                     <select 
+                       value={formData.vehicleType}
+                       onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
+                       className="flex h-[52px] w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground"
+                     >
+                       <option value="Bike">Bike</option>
+                       <option value="Scooter">Scooter</option>
+                       <option value="Bicycle">Bicycle</option>
+                       <option value="Electric Vehicle">Electric Vehicle</option>
+                       <option value="Car">Car</option>
+                     </select>
+                   </div>
+                   <Input label="Vehicle Number" value={formData.vehicleNumber} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, vehicleNumber: e.target.value })} />
+                </div>
+              </>
+            )}
 
             <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">Emergency Contact</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">

@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- CORE ENTITIES ---
+
+model User {
+  id               String           @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String           @unique
+  phone            String?          @unique
+  password         String
+  role             String           @default("CUSTOMER") // CUSTOMER, ADMIN
+  profileImage     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  orders           Order[]
+  wishlist         Wishlist[]
+  cart             CartItem[]
+  ratings          Rating[]
+  reviews          Review[]
+  productViews     ProductView[]
+  searchHistory    SearchHistory[]
+  clickEvents      ClickEvent[]
+  sessions         UserSession[]
+  userBehaviours   UserBehaviour[]
+  interests        CustomerInterest[]
+}
+
+model Seller {
+  id               String     @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String     @unique
+  phone            String     @unique
+  password         String
+  businessName     String?
+  gstNumber        String?
+  status           String     @default("PENDING") // VERIFIED, PENDING, REJECTED
+  profileImage     String?
+  rating           Float      @default(0)
+  earnings         Float      @default(0)
+  dateJoined       DateTime   @default(now())
+  isNewSeller      Boolean    @default(true) // Used for 15% fairness promotion
+
+  // Seller KYC & Financials
+  bankAccount      String?
+  ifscCode         String?
+  upiId            String?
+  panNumber        String?
+  aadhaarNumber    String?
+  documents        String[] // URLs to uploaded documents
+
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  products         Product[]
+  sellerScores     SellerScore[]
+}
+
+model DeliveryPartner {
+  id                     String   @id @default(uuid())
+  partnerId              String   @unique
+  firstName              String
+  lastName               String
+  fullName               String
+  email                  String
+  phone                  String   @unique
+  password               String?
+  status                 String   @default("Pending")
+  profileImage           String?
+  rating                 Float    @default(0)
+  deliveries             Int      @default(0)
+  earnings               Float    @default(0)
+  todayDeliveries        Int      @default(0)
+  currentAddress         String?
+  permanentAddress       String?
+  state                  String?
+  district               String?
+  city                   String?
+  pincode                String?
+  emergencyContactName   String?
+  emergencyContactNumber String?
+  dateJoined             DateTime @default(now())
+  vehicleType            String?
+  vehicleNumber          String?
+  dateOfBirth            String?
+  gender                 String?
+  
+  // Partner KYC, Vehicle Documents & Financials
+  aadhaarNumber          String?
+  panNumber              String?
+  drivingLicense         String?
+  rcBook                 String?
+  vehicleInsurance       String?
+  bankAccount            String?
+  ifscCode               String?
+  upiId                  String?
+  
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  orders                 Order[]
+}
+
+// --- PRODUCT CATALOG ---
+
+model Category {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  description   String?
+  products      Product[]
+  subcategories Subcategory[]
+}
+
+model Subcategory {
+  id            String    @id @default(uuid())
+  name          String
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+  products      Product[]
+}
+
+model Product {
+  id            String    @id @default(uuid())
+  name          String
+  description   String
+  price         Float
+  discount      Float     @default(0)
+  craftType     String?
+  inventory     Int       @default(0)
+  popularity    Float     @default(0)
+  tags          String[]
+  materials     String[]
+
+  // Embeddings for pgvector (Sentence Transformers usually output 384 or 768 dims, using 768)
+  embedding     Unsupported("vector(768)")?
+
+  sellerId      String
+  seller        Seller    @relation(fields: [sellerId], references: [id])
+
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+
+  subcategoryId String?
+  subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  images        ProductImage[]
+  orderItems    OrderItem[]
+  wishlist      Wishlist[]
+  cartItems     CartItem[]
+  ratings       Rating[]
+  reviews       Review[]
+  views         ProductView[]
+  clicks        ClickEvent[]
+}
+
+model ProductImage {
+  id            String   @id @default(uuid())
+  url           String   // Storing path/URL, not raw bytes
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// --- COMMERCE & INTERACTIONS ---
+
+model Order {
+  id            String      @id @default(uuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  totalAmount   Float
+  status        String      @default("PENDING") // PENDING, CONFIRMED, SHIPPED, DELIVERED
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  deliveryPartnerId String?
+  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+
+  items         OrderItem[]
+}
+
+model OrderItem {
+  id            String    @id @default(uuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  quantity      Int
+  priceAtBuy    Float
+}
+
+model Wishlist {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  @@unique([userId, productId])
+}
+
+model CartItem {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  quantity      Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, productId])
+}
+
+model Rating {
+  id            String    @id @default(uuid())
+  value         Int       // 1 to 5
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  createdAt     DateTime  @default(now())
+}
+
+model Review {
+  id            String    @id @default(uuid())
+  text          String
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  createdAt     DateTime  @default(now())
+}
+
+// --- USER BEHAVIOUR & ML SIGNALS ---
+
+model ProductView {
+  id            String    @id @default(uuid())
+  userId        String?   // Null if guest
+  user          User?     @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  timeSpent     Int?      // In seconds
+  scrollDepth   Int?      // Percentage
+  createdAt     DateTime  @default(now())
+}
+
+model ClickEvent {
+  id            String    @id @default(uuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  source        String?   // e.g., 'home_recommendation', 'search_results'
+  createdAt     DateTime  @default(now())
+}
+
+model SearchHistory {
+  id            String    @id @default(uuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  query         String
+  createdAt     DateTime  @default(now())
+}
+
+model UserSession {
+  id            String    @id @default(uuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  duration      Int?      // Session duration in seconds
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+}
+
+model UserBehaviour {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  eventType     String    // SHARE, REPEAT_VISIT, etc.
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+}
+
+model CustomerInterest {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  interest      String    // e.g., "Handmade Pottery"
+  weight        Float     @default(1.0)
+}
+
+// --- RECOMMENDATION METRICS ---
+
+model RecommendationLog {
+  id            String    @id @default(uuid())
+  userId        String
+  recommendedIds String[] // Array of Product IDs shown
+  context       String    // e.g., 'home_page', 'cart_upsell'
+  clickedIds    String[]  // Array of Product IDs clicked from this recommendation
+  createdAt     DateTime  @default(now())
+}
+
+model TrendingScore {
+  id            String    @id @default(uuid())
+  productId     String    @unique
+  score         Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+}
+
+model SeasonalScore {
+  id            String    @id @default(uuid())
+  productId     String
+  season        String    // e.g., "Diwali", "Christmas"
+  score         Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+  
+  @@unique([productId, season])
+}
+
+model SellerScore {
+  id            String    @id @default(uuid())
+  sellerId      String    @unique
+  seller        Seller    @relation(fields: [sellerId], references: [id])
+  score         Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+}
+
+// --- LOCATION DATA ---
+
+model Country {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  states        State[]
+}
+
+model State {
+  id            String    @id @default(uuid())
+  name          String
+  countryId     String
+  country       Country   @relation(fields: [countryId], references: [id])
+  cities        City[]
+}
+
+model City {
+  id            String    @id @default(uuid())
+  name          String
+  stateId       String
+  state         State     @relation(fields: [stateId], references: [id])
+}
+
+model Language {
+  id            String    @id @default(uuid())
+  code          String    @unique // e.g., 'en', 'hi'
+  name          String
+}

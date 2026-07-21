@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard,
   User,
@@ -13,17 +14,9 @@ import {
   ChevronRight,
   LogOut,
   Truck,
+  Package,
+  ShoppingBag
 } from 'lucide-react'
-
-const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-  { icon: User, label: 'My Profile', path: '/dashboard/profile' },
-  { icon: FileText, label: 'Documents', path: '/dashboard/documents' },
-  { icon: History, label: 'Delivery History', path: '/dashboard/history', disabled: true },
-  { icon: Wallet, label: 'Payments', path: '/dashboard/payments', disabled: true },
-  { icon: HeadphonesIcon, label: 'Support', path: '/dashboard/support', disabled: true },
-  { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
-]
 
 interface SidebarProps {
   collapsed: boolean
@@ -34,6 +27,45 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: SidebarProps) {
   const location = useLocation()
+  const { user } = useAuth()
+  
+  // Dynamic Nav Items based on Role
+  let navItems = [
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: User, label: 'My Profile', path: '/dashboard/profile' },
+    { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
+  ]
+  
+  if (user?.role === 'ADMIN') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'Dispatch Center', path: '/dashboard' },
+      { icon: User, label: 'Admin Profile', path: '/dashboard/profile' },
+      { icon: Settings, label: 'System Settings', path: '/dashboard/settings' },
+    ]
+  } else if (user?.role === 'SELLER') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'My Store', path: '/dashboard' },
+      { icon: Package, label: 'My Products', path: '/dashboard/documents' },
+      { icon: Wallet, label: 'Earnings', path: '/dashboard/payments', disabled: true },
+      { icon: User, label: 'Store Profile', path: '/dashboard/profile' },
+      { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
+    ]
+  } else if (user?.role === 'DELIVERY') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'My Routes', path: '/dashboard' },
+      { icon: History, label: 'Delivery History', path: '/dashboard/history', disabled: true },
+      { icon: Wallet, label: 'Earnings', path: '/dashboard/payments', disabled: true },
+      { icon: User, label: 'My Profile', path: '/dashboard/profile' },
+      { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
+    ]
+  } else if (user?.role === 'CUSTOMER') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'My Account', path: '/dashboard' },
+      { icon: ShoppingBag, label: 'Order History', path: '/dashboard/history', disabled: true },
+      { icon: User, label: 'Profile', path: '/dashboard/profile' },
+      { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
+    ]
+  }
 
   return (
     <motion.aside
@@ -58,7 +90,7 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
               className="whitespace-nowrap"
             >
               <p className="text-base font-bold text-foreground leading-tight">UdrCrafts</p>
-              <p className="text-[11px] text-muted-foreground">Partner Portal</p>
+              <p className="text-[11px] text-muted-foreground capitalize">{user?.role?.toLowerCase() || 'Partner'} Portal</p>
             </motion.div>
           )}
         </div>
@@ -70,7 +102,7 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
           const isActive = location.pathname === item.path
           return (
             <NavLink
-              key={item.path}
+              key={item.path + item.label}
               to={item.path}
               onClick={(e) => item.disabled && e.preventDefault()}
               className={cn(
@@ -137,16 +169,45 @@ export function Sidebar({ collapsed, onToggle, onLogout, isMobile = false }: Sid
 // Mobile Bottom Navigation
 export function MobileBottomNav() {
   const location = useLocation()
-  const mobileNavItems = navItems.filter((item) => !item.disabled).slice(0, 5)
+  const { user } = useAuth()
+  
+  let navItems = [
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: User, label: 'Profile', path: '/dashboard/profile' },
+  ]
+  
+  if (user?.role === 'ADMIN') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'Dispatch', path: '/dashboard' },
+      { icon: User, label: 'Profile', path: '/dashboard/profile' },
+    ]
+  } else if (user?.role === 'SELLER') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'Store', path: '/dashboard' },
+      { icon: Package, label: 'Products', path: '/dashboard/documents' },
+      { icon: User, label: 'Profile', path: '/dashboard/profile' },
+    ]
+  } else if (user?.role === 'DELIVERY') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'Routes', path: '/dashboard' },
+      { icon: History, label: 'History', path: '/dashboard/history' },
+      { icon: User, label: 'Profile', path: '/dashboard/profile' },
+    ]
+  } else if (user?.role === 'CUSTOMER') {
+    navItems = [
+      { icon: LayoutDashboard, label: 'Account', path: '/dashboard' },
+      { icon: ShoppingBag, label: 'Orders', path: '/dashboard/history' },
+    ]
+  }
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-40 safe-area-bottom shadow-sm">
       <div className="flex items-center justify-around px-2 py-2">
-        {mobileNavItems.map((item) => {
+        {navItems.map((item) => {
           const isActive = location.pathname === item.path
           return (
             <NavLink
-              key={item.path}
+              key={item.path + item.label}
               to={item.path}
               className={cn(
                 'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all',

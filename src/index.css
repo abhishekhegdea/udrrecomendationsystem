@@ -43,6 +43,7 @@
   --color-clay: var(--clay);
   --color-forest: var(--forest);
   --color-sand: var(--sand);
+  --color-deep-teal: var(--deep-teal);
 }
 
 :root {
@@ -54,28 +55,34 @@
   --ink: oklch(0.18 0.01 60);
   --cream: oklch(0.965 0.017 78);           /* #F7F2EB */
   --sand: oklch(0.94 0.024 78);
-  --saffron: oklch(0.82 0.17 78);           /* #F9B000 */
+  --saffron: oklch(0.82 0.17 78);           /* #F9B000 (Gold) */
   --terracotta: oklch(0.63 0.14 45);        /* #C97B4A */
   --clay: oklch(0.48 0.08 45);              /* #8A5A44 */
   --forest: oklch(0.45 0.09 155);           /* #2F6B45 */
+  --deep-teal: #063d48;                     /* Signature Brand Color */
 
   --card: oklch(1 0 0);
   --card-foreground: var(--ink);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--ink);
-  --primary: var(--ink);
+  
+  --primary: var(--deep-teal);
   --primary-foreground: oklch(0.99 0.005 85);
-  --secondary: var(--cream);
+  
+  --secondary: var(--saffron);
   --secondary-foreground: var(--ink);
+  
   --muted: var(--cream);
   --muted-foreground: oklch(0.45 0.02 60);
+  
   --accent: var(--saffron);
   --accent-foreground: var(--ink);
+  
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.99 0.005 85);
   --border: oklch(0.9 0.015 78);
   --input: oklch(0.9 0.015 78);
-  --ring: var(--saffron);
+  --ring: var(--primary);
 }
 
 .dark {
