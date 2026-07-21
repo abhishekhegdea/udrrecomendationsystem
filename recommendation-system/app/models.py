@@ -70,3 +70,14 @@ class User(Base):
     firstName = Column(String)
     email = Column(String)
     role = Column(String)
+
+class Order(Base):
+    __tablename__ = "Order"
+    id = Column(String, primary_key=True)
+    userId = Column(String, ForeignKey("User.id"))
+
+class OrderItem(Base):
+    __tablename__ = "OrderItem"
+    id = Column(String, primary_key=True)
+    orderId = Column(String, ForeignKey("Order.id"))
+    productId = Column(String, ForeignKey("Product.id"))

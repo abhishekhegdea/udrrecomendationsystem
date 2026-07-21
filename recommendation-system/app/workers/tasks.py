@@ -9,8 +9,19 @@ def update_trending():
 
 @celery_app.task
 def retrain_collaborative_model():
-    # TODO: Retrain LightFM using latest implicit feedback
-    print("Retraining LightFM...")
+    from app.database import SessionLocal
+    from app.ml.collaborative import collaborative_model
+    
+    print("Retraining Matrix Factorization model...")
+    db = SessionLocal()
+    try:
+        success = collaborative_model.train(db)
+        if success:
+            print("Successfully retrained Collaborative Filter.")
+        else:
+            print("Failed to retrain (possibly not enough data).")
+    finally:
+        db.close()
     return True
 
 @celery_app.task

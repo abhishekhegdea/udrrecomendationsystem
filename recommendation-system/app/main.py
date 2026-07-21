@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import recommendations
+from app.database import SessionLocal
+from app.ml.collaborative import collaborative_model
 
 app = FastAPI(
     title="UdrCrafts ML Recommendation Engine",
@@ -19,6 +21,15 @@ app.add_middleware(
 
 # Include routers
 app.include_router(recommendations.router, prefix="/api/v1/recommendations", tags=["Recommendations"])
+
+@app.on_event("startup")
+def startup_event():
+    db = SessionLocal()
+    try:
+        print("Training Collaborative Filter on startup...")
+        collaborative_model.train(db)
+    finally:
+        db.close()
 
 @app.get("/health")
 def health_check():

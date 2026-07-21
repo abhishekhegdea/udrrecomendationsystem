@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models import Product, Seller
 from app.ranking.ranker import HybridRanker
 from app.ml.content_based import get_similar_products
+from app.ml.collaborative import collaborative_model
 
 router = APIRouter()
 
@@ -44,7 +45,10 @@ def get_home_recommendations(user_id: str, db: Session = Depends(get_db)):
     ranker = HybridRanker(db)
     
     for p in candidates:
-        base_score = ranker.calculate_final_score(p, 0.5, 0.5)
+        # Get matrix factorization score for this specific user/product combo
+        collab_score = collaborative_model.get_collaborative_score(user_id, p.id)
+        
+        base_score = ranker.calculate_final_score(p, 0.5, collab_score)
         explanation = "Trending among customers."
         
         # Boost score if it matches user's preferred categories
