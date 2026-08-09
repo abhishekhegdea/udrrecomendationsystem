@@ -52,6 +52,38 @@ router.get('/me', authMiddleware, async (req: any, res: any) => {
   }
 });
 
+router.put('/me', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { id, role } = req.user;
+    const { stateId, cityId } = req.body;
+    
+    if (role === 'DELIVERY') {
+      // delivery partner logic already handled elsewhere or can be added here
+      return res.json({ user: await prisma.deliveryPartner.findUnique({ where: { id } }) });
+    }
+    
+    if (role === 'SELLER') {
+      const seller = await prisma.seller.update({
+        where: { id },
+        data: { stateId, cityId }
+      });
+      const { password: _, ...safeSeller } = seller;
+      return res.json({ user: { ...safeSeller, role: 'SELLER' } });
+    }
+    
+    // Default to User table (CUSTOMER / ADMIN)
+    const user = await prisma.user.update({
+      where: { id },
+      data: { stateId, cityId }
+    });
+    const { password: _, ...safeUser } = user;
+    return res.json({ user: safeUser });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 router.post('/signup', async (req, res) => {
   try {
     const data = req.body;
@@ -59,8 +91,9 @@ router.post('/signup', async (req, res) => {
     // Generate a partner ID
     const partnerId = `UDRSP${Math.floor(1000 + Math.random() * 9000)}`;
     
-    // Extract phone
-    const phone = data.mobileNumber?.replace(/\D/g, '').slice(-10) || data.phone;
+    // Extract phone — always store the sanitized last-10 digits so it
+    // matches the login lookup (which compares against slice(-10)).
+    const phone = String(data.mobileNumber || data.phone || '').replace(/\D/g, '').slice(-10);
     
     if (!phone) {
       return res.status(400).json({ error: 'Phone number is required' });
@@ -126,14 +159,27 @@ router.post('/login', async (req, res) => {
   // Existing delivery partner login...
   try {
     const { phone } = req.body;
-    const cleanPhone = phone?.replace(/\D/g, '').slice(-10);
+    const rawPhone = String(phone || '').replace(/\D/g, '');
+    const cleanPhone = rawPhone.slice(-10);
 
     if (!cleanPhone) {
       return res.status(400).json({ error: 'Phone number is required' });
     }
 
-    const partner = await prisma.deliveryPartner.findUnique({
-      where: { phone: cleanPhone }
+    // Some accounts were created before phone sanitization, so they may
+    // store an 11-digit variant (e.g. '00' + last-10). Match tolerantly:
+    // exact sanitized phone, exact raw digits, or any stored value whose
+    // last 10 digits equal the sanitized input.
+    const partner = await prisma.deliveryPartner.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: rawPhone },
+          { phone: { endsWith: cleanPhone } }
+        ]
+      },
+      // Deterministic pick when two stored phones are suffixes of each other
+      orderBy: { createdAt: 'asc' }
     });
 
     if (!partner) {
@@ -174,7 +220,9 @@ router.post('/user/signup', async (req, res) => {
         email,
         phone,
         password: hashedPassword,
-        role: req.body.role || 'CUSTOMER'
+        role: req.body.role || 'CUSTOMER',
+        stateId: req.body.stateId || null,
+        cityId: req.body.cityId || null
       }
     });
 
@@ -246,6 +294,8 @@ router.post('/seller/signup', async (req, res) => {
         password: hashedPassword,
         businessName,
         gstNumber,
+        stateId: req.body.stateId || null,
+        cityId: req.body.cityId || null,
         bankAccount: req.body.bankAccount || '',
         ifscCode: req.body.ifscCode || '',
         upiId: req.body.upiId || '',

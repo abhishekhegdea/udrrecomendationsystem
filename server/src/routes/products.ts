@@ -15,6 +15,8 @@ router.get('/', async (req, res) => {
     const categoryName = req.query.categoryName as string;
     const minPrice = req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined;
     const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined;
+    const minRating = req.query.minRating ? parseFloat(req.query.minRating as string) : undefined;
+    const sort = req.query.sort as string;
 
     const whereClause: any = {};
     if (q) {
@@ -37,6 +39,9 @@ router.get('/', async (req, res) => {
       if (minPrice !== undefined) whereClause.price.gte = minPrice;
       if (maxPrice !== undefined) whereClause.price.lte = maxPrice;
     }
+    if (minRating !== undefined) {
+      whereClause.averageRating = { gte: minRating };
+    }
 
     const products = await prisma.product.findMany({
       where: whereClause,
@@ -47,7 +52,15 @@ router.get('/', async (req, res) => {
         seller: { select: { businessName: true, firstName: true, rating: true, isNewSeller: true } },
         category: { select: { name: true, id: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: sort === 'rating' 
+        ? { averageRating: 'desc' } 
+        : sort === 'price_asc' 
+          ? { price: 'asc' } 
+          : sort === 'price_desc' 
+            ? { price: 'desc' } 
+            : sort === 'popular' 
+              ? { popularity: 'desc' } 
+              : { createdAt: 'desc' }
     });
     
     const total = await prisma.product.count({ where: whereClause });
@@ -167,14 +180,17 @@ router.get('/wishlist/:userId', async (req, res) => {
   }
 });
 
-// POST add to wishlist
+// POST add to wishlist (idempotent — re-adding an item already in the
+// wishlist returns the existing record instead of a unique-constraint 500)
 router.post('/wishlist', async (req, res) => {
   try {
     const { userId, productId } = req.body;
     if (!userId || !productId) return res.status(400).json({ error: 'Missing fields' });
 
-    const wishlistItem = await prisma.wishlist.create({
-      data: { userId, productId },
+    const wishlistItem = await prisma.wishlist.upsert({
+      where: { userId_productId: { userId, productId } },
+      update: {},
+      create: { userId, productId },
       include: { product: true }
     });
     res.status(201).json(wishlistItem);

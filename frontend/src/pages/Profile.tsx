@@ -5,14 +5,44 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/contexts/AuthContext'
-import {
-  User, Mail, Phone, MapPin, Calendar, Car, PhoneCall,
+import { User, Mail, Phone, MapPin, Calendar, Car, PhoneCall,
   Download, Edit3, Truck, Award, Star, CheckCircle2, Shield, ShoppingBag
 } from 'lucide-react'
+import { useEffect } from 'react'
 
 export function ProfilePage() {
   const { user, updateUser } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
+  const [states, setStates] = useState<any[]>([])
+  const [cities, setCities] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch('http://localhost:3001/api/locations/states')
+      .then(res => res.json())
+      .then(data => setStates(data))
+      .catch(err => console.error(err))
+  }, [])
+
+  useEffect(() => {
+    if (user?.stateId) {
+      fetch(`http://localhost:3001/api/locations/cities/${user.stateId}`)
+        .then(res => res.json())
+        .then(data => setCities(data))
+        .catch(err => console.error(err))
+    }
+  }, [user?.stateId])
+
+  const handleStateChange = (stateId: string) => {
+    setFormData(prev => ({ ...prev, stateId, cityId: '' }))
+    if (stateId) {
+      fetch(`http://localhost:3001/api/locations/cities/${stateId}`)
+        .then(res => res.json())
+        .then(data => setCities(data))
+        .catch(err => console.error(err))
+    } else {
+      setCities([])
+    }
+  }
   
   // Construct dynamic profile data without falling back to a dummy delivery partner
   const profileData = {
@@ -20,8 +50,11 @@ export function ProfilePage() {
     email: user?.email || '',
     phone: user?.phone || 'Not Provided',
     currentAddress: user?.currentAddress || 'Not Provided',
-    city: user?.city || 'Not Provided',
-    state: user?.state || 'Not Provided',
+    cityId: user?.cityId || '',
+    stateId: user?.stateId || '',
+    // Display names (fallback to IDs if full objects aren't populated)
+    city: user?.city?.name || user?.cityId || 'Not Provided',
+    state: user?.state?.name || user?.stateId || 'Not Provided',
     pincode: user?.pincode || 'Not Provided',
     vehicleType: user?.vehicleType || 'Not Provided',
     vehicleNumber: user?.vehicleNumber || 'Not Provided',
@@ -40,8 +73,8 @@ export function ProfilePage() {
     email: profileData.email || '',
     phone: profileData.phone || '',
     currentAddress: profileData.currentAddress || '',
-    city: profileData.city || '',
-    state: profileData.state || '',
+    cityId: profileData.cityId || '',
+    stateId: profileData.stateId || '',
     pincode: profileData.pincode || '',
     vehicleType: profileData.vehicleType || '',
     vehicleNumber: profileData.vehicleNumber || '',
@@ -172,8 +205,29 @@ export function ProfilePage() {
             <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">Address & Location</h3>
             <Input label="Current Address" value={formData.currentAddress} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, currentAddress: e.target.value })} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              <Input label="City" value={formData.city} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, city: e.target.value })} />
-              <Input label="State" value={formData.state} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, state: e.target.value })} />
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-foreground">State</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={formData.stateId} 
+                  onChange={(e) => handleStateChange(e.target.value)}
+                >
+                  <option value="">Select State</option>
+                  {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-foreground">City</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={formData.cityId} 
+                  onChange={(e) => setFormData({ ...formData, cityId: e.target.value })}
+                  disabled={!formData.stateId}
+                >
+                  <option value="">Select City</option>
+                  {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
               <Input label="Pincode" value={formData.pincode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, pincode: e.target.value })} />
             </div>
 

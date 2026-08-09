@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Package, TrendingUp, DollarSign, Plus, Loader2 } from 'lucide-react'
+import { Package, TrendingUp, DollarSign, Plus, Loader2, XCircle, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { ProductUpload } from '@/components/seller/ProductUpload'
-import axios from 'axios'
+import api from '@/lib/api'
+import { toast } from 'sonner'
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.08 } } }
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }
@@ -13,11 +14,12 @@ export function SellerDashboard() {
   const { user } = useAuth()
   const [stats, setStats] = useState<any>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   const fetchStats = async () => {
     if (!user) return
     try {
-      const res = await axios.get(`http://localhost:3001/api/seller/stats/${user.id}`)
+      const res = await api.get(`http://localhost:3001/api/seller/stats/${user.id}`)
       setStats(res.data)
     } catch (error) {
       console.error('Failed to load seller stats', error)
@@ -27,6 +29,23 @@ export function SellerDashboard() {
   useEffect(() => {
     fetchStats()
   }, [user])
+
+  const handleCancelItem = async (orderItemId: string) => {
+    if (!user) return
+    setCancellingId(orderItemId)
+    try {
+      const res = await api.put(`http://localhost:3001/api/seller/orders/${orderItemId}/cancel`, {
+        sellerId: user.id,
+      })
+      toast.success(res.data.message || 'Item cancelled successfully.')
+      fetchStats()
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Failed to cancel item.'
+      toast.error(msg)
+    } finally {
+      setCancellingId(null)
+    }
+  }
 
   if (!stats) {
     return <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>
@@ -53,7 +72,7 @@ export function SellerDashboard() {
         </button>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <motion.div variants={item}>
           <Card>
             <CardHeader className="pb-2">
@@ -95,35 +114,114 @@ export function SellerDashboard() {
             </CardContent>
           </Card>
         </motion.div>
-      </div>
-      
+
+        {/* New: Cancel Penalty Score Card */}
         <motion.div variants={item}>
           <Card>
-            <CardHeader>
-              <CardTitle>Recent Orders</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Cancel Penalty</CardTitle>
             </CardHeader>
             <CardContent>
-              {stats.recentOrders?.length > 0 ? (
-                <div className="space-y-4">
-                  {stats.recentOrders.map((orderItem: any) => (
-                    <div key={orderItem.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
-                      <div>
-                        <p className="font-bold text-foreground">{orderItem.product.name} (x{orderItem.quantity})</p>
-                        <p className="text-sm text-muted-foreground">Order #{orderItem.order.id.slice(0,8).toUpperCase()} • {orderItem.order.user?.firstName}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-primary">₹{orderItem.priceAtBuy * orderItem.quantity}</p>
-                        <span className="text-xs font-bold text-muted-foreground uppercase">{orderItem.order.status}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No orders yet.</p>
-              )}
+              <div className="flex items-center gap-2">
+                <AlertTriangle className={`h-5 w-5 ${(stats.cancelPenalty || 0) > 0 ? 'text-red-500' : 'text-green-500'}`} />
+                <span className={`text-2xl font-bold ${(stats.cancelPenalty || 0) > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                  {(stats.cancelPenalty || 0).toFixed(1)}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Higher = worse recommendation ranking</p>
             </CardContent>
           </Card>
         </motion.div>
+      </div>
+      
+      {/* Recent Orders Section */}
+      <motion.div variants={item}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {stats.recentOrders?.length > 0 ? (
+              <div className="space-y-4">
+                {stats.recentOrders.map((orderItem: any) => (
+                  <div key={orderItem.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+                    <div>
+                      <p className="font-bold text-foreground">{orderItem.product.name} (x{orderItem.quantity})</p>
+                      <p className="text-sm text-muted-foreground">
+                        Order #{orderItem.order.id.slice(0,8).toUpperCase()} • {orderItem.order.user?.firstName}
+                      </p>
+                    </div>
+                    <div className="text-right flex items-center gap-3">
+                      <div>
+                        <p className="font-bold text-primary">₹{orderItem.priceAtBuy * orderItem.quantity}</p>
+                        <span className={`text-xs font-bold uppercase ${
+                          orderItem.order.status === 'DELIVERED' ? 'text-green-600' : 
+                          orderItem.order.status === 'CANCELLED' ? 'text-red-500' : 'text-muted-foreground'
+                        }`}>
+                          {orderItem.order.status}
+                        </span>
+                      </div>
+                      {/* Cancel Button — only show for non-delivered, non-cancelled items */}
+                      {orderItem.order.status !== 'DELIVERED' && orderItem.order.status !== 'CANCELLED' && (
+                        <button
+                          onClick={() => handleCancelItem(orderItem.id)}
+                          disabled={cancellingId === orderItem.id}
+                          className="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Cancel this order item"
+                        >
+                          {cancellingId === orderItem.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No orders yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Cancelled Orders Section */}
+      {stats.cancelledOrders?.length > 0 && (
+        <motion.div variants={item}>
+          <Card className="border-red-200/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-red-600">
+                <XCircle className="h-5 w-5" />
+                Cancelled Items
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {stats.cancelledOrders.map((orderItem: any) => (
+                  <div key={orderItem.id} className="flex items-center justify-between p-3 bg-red-50/50 rounded-xl border border-red-100">
+                    <div>
+                      <p className="font-semibold text-foreground">{orderItem.product.name} (x{orderItem.quantity})</p>
+                      <p className="text-xs text-muted-foreground">
+                        Order #{orderItem.order.id.slice(0,8).toUpperCase()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-red-500">₹{orderItem.priceAtBuy * orderItem.quantity}</p>
+                      <span className="text-[10px] font-bold text-red-400 uppercase">Cancelled</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Cancellations add a penalty of 5 points each, lowering your products in recommendations.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {isUploading && (
         <ProductUpload 

@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import api from '@/lib/api'
+
+// Human-readable labels for the return reasons recorded with RETURN events
+const RETURN_REASON_LABELS: Record<string, string> = {
+  QUALITY: 'Quality issue',
+  DAMAGED: 'Damaged in transit',
+  MISTAKE: 'Ordered by mistake',
+  OTHER: 'Other',
+}
 
 export function RecommendationTester() {
   const [stats, setStats] = useState<any>(null)
@@ -10,7 +18,7 @@ export function RecommendationTester() {
 
   useEffect(() => {
     // Fetch global DB stats and buyer list
-    axios.get('http://localhost:3001/api/admin/debug/stats')
+    api.get('http://localhost:3001/api/admin/debug/stats')
       .then(res => {
         setStats(res.data)
         if (res.data.buyers && res.data.buyers.length > 0) {
@@ -25,11 +33,8 @@ export function RecommendationTester() {
     
     setLoading(true)
     
-    // 1. Fetch exact DB history
-    const fetchHistory = axios.get(`http://localhost:3001/api/admin/debug/buyer/${selectedBuyerId}`)
-    // 2. Fetch live ML recommendations (using Python endpoint directly or via proxy)
-    // Assuming backend proxy routes /api/recommendations/home/:userId to FastAPI
-    const fetchRecs = axios.get(`http://localhost:3001/api/recommendations/home/${selectedBuyerId}`)
+    const fetchHistory = api.get(`http://localhost:3001/api/admin/debug/buyer/${selectedBuyerId}`)
+    const fetchRecs = api.get(`http://localhost:3001/api/recommendations/home/${selectedBuyerId}`)
 
     Promise.all([fetchHistory, fetchRecs])
       .then(([histRes, recRes]) => {
@@ -53,7 +58,7 @@ export function RecommendationTester() {
       </div>
 
       {/* Aggregate Report */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
         {[
           { label: 'Sellers', val: stats.totalSellers },
           { label: 'Buyers', val: stats.totalBuyers },
@@ -61,6 +66,7 @@ export function RecommendationTester() {
           { label: 'Orders', val: stats.totalOrders },
           { label: 'Wishlists', val: stats.totalWishlists },
           { label: 'Views', val: stats.totalViews },
+          { label: 'Cart Events', val: stats.totalCartEvents },
         ].map(s => (
           <div key={s.label} className="bg-card border rounded-xl p-4 text-center shadow-sm">
             <div className="text-2xl font-bold text-primary">{s.val}</div>
@@ -104,6 +110,29 @@ export function RecommendationTester() {
               </div>
 
               <div>
+                <h3 className="font-semibold text-sm mb-2 text-primary uppercase">Returned Items</h3>
+                {(!buyerHistory?.returns || buyerHistory.returns.length === 0) && <p className="text-xs text-muted-foreground">None</p>}
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  {buyerHistory?.returns?.map((r: any, i: number) => (
+                    <li key={r.id ?? i}>
+                      {r.product?.name || 'Deleted product'}{' '}
+                      <span className="text-muted-foreground">({r.product?.category?.name || '—'})</span>{' '}
+                      <span className={`text-xs font-medium ${r.metadata?.qualityIssue ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        [{RETURN_REASON_LABELS[r.metadata?.reason] || r.metadata?.reason || 'Other'}]
+                      </span>
+                      {r.metadata?.qualityIssue && (
+                        <span className="ml-1 inline-block px-1.5 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded">Quality</span>
+                      )}
+                      {r.metadata?.rating ? <span className="text-xs text-amber-500"> ★{r.metadata.rating}</span> : null}
+                      {r.metadata?.reviewText && (
+                        <p className="text-xs text-muted-foreground italic">"{r.metadata.reviewText}"</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
                 <h3 className="font-semibold text-sm mb-2 text-primary uppercase">Wishlist Items</h3>
                 {buyerHistory?.wishlist?.length === 0 && <p className="text-xs text-muted-foreground">None</p>}
                 <ul className="list-disc pl-5 text-sm space-y-1">
@@ -119,6 +148,23 @@ export function RecommendationTester() {
                 <ul className="list-disc pl-5 text-sm space-y-1">
                   {buyerHistory?.views?.map((v: any, i: number) => (
                     <li key={i}>{v.product.name} <span className="text-muted-foreground">({v.product.category.name})</span></li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-sm mb-2 text-primary uppercase">Cart Activity</h3>
+                {(!buyerHistory?.cart || buyerHistory.cart.length === 0) && <p className="text-xs text-muted-foreground">None</p>}
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  {buyerHistory?.cart?.map((c: any, i: number) => (
+                    <li key={c.id ?? i}>
+                      {c.product?.name || 'Deleted product'}{' '}
+                      <span className="text-muted-foreground">({c.product?.category?.name || '—'})</span>{' '}
+                      <span className="text-xs text-muted-foreground">
+                        [{c.metadata?.action || 'add'}
+                        {c.metadata?.quantity ? ` ×${c.metadata.quantity}` : ''}]
+                      </span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -148,7 +194,22 @@ export function RecommendationTester() {
                   <div>
                     <h3 className="font-bold text-foreground">{rec.name}</h3>
                     <p className="text-sm text-primary font-medium mt-1">₹{rec.price} <span className="text-muted-foreground ml-2">| Score: {rec.score}</span></p>
-                    <div className="mt-2 inline-block px-2 py-1 bg-muted text-xs rounded text-muted-foreground italic border">
+                    
+                    {rec.score_details && (
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs bg-muted/50 p-2 rounded border">
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Source:</span> <span className="font-medium text-foreground">{rec.score_details.source}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Content:</span> <span className="font-medium text-foreground">{rec.score_details.content}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Collab:</span> <span className="font-medium text-foreground">{rec.score_details.collab}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Engagement:</span> <span className="font-medium text-foreground">{rec.engagement_score}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Trend:</span> <span className="font-medium text-foreground">{rec.score_details.trend}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Category:</span> <span className="font-medium text-foreground">{rec.score_details.category}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Brand:</span> <span className="font-medium text-foreground">{rec.score_details.brand}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Location:</span> <span className="font-medium text-foreground">{rec.score_details.location}</span></div>
+                        <div className="flex justify-between px-1"><span className="text-muted-foreground">Seller:</span> <span className="font-medium text-foreground">{rec.score_details.seller}</span></div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 inline-block px-2 py-1 bg-muted text-xs rounded text-muted-foreground italic border">
                       ✨ {rec.explanation}
                     </div>
                   </div>

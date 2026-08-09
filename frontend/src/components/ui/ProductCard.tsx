@@ -1,7 +1,13 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { Heart, ShoppingBag } from 'lucide-react'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Heart, ShoppingBag, Eye } from 'lucide-react'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useCart } from '@/contexts/CartContext'
+import { useQuickView } from '@/contexts/QuickViewContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { FALLBACK_PRODUCT_IMAGE, formatCurrency, getProductImageUrl } from '@/lib/utils'
+import { StarRating } from '@/components/ui/star-rating'
+import { trackClick, trackWishlist } from '@/lib/track'
 
 interface Product {
   id: string;
@@ -9,47 +15,109 @@ interface Product {
   price: number;
   seller_name?: string;
   seller_new?: boolean;
+  brand?: string;
   image?: string;
+  currency?: string;
   explanation?: string;
+  averageRating?: number;
+  reviewsCount?: number;
+  description?: string;
+  materials?: string[];
+  categoryName?: string;
 }
 
 export function ProductCard({ product }: { product: Product }) {
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const { user } = useAuth()
   const { toggleWishlist, isInWishlist } = useWishlist()
   const { addItem } = useCart()
-  const navigate = useNavigate()
+  const { openQuickView } = useQuickView()
   
   const inWishlist = isInWishlist(product.id)
+  const safeImage = getProductImageUrl(product.image)
 
   const handleWishlist = (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    const wasInWishlist = inWishlist
     toggleWishlist(product.id)
+    // Track wishlist event
+    if (user) {
+      trackWishlist(user.id, product.id, wasInWishlist ? 'remove' : 'add', {
+        source: 'product_card'
+      })
+    }
   }
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       quantity: 1,
-      image: product.image
+      image: safeImage,
+      currency: product.currency
     })
-    // Optionally navigate to cart or show toast
+    // Track add-to-cart as a click event
+    if (user) {
+      trackClick(user.id, product.id, {
+        source: 'product_card',
+        elementClicked: 'add_to_cart_button'
+      })
+    }
+  }
+
+  const handleQuickView = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    openQuickView({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      currency: product.currency,
+      image: safeImage,
+      brand: product.brand,
+      seller_name: product.seller_name,
+      averageRating: product.averageRating,
+      reviewsCount: product.reviewsCount,
+      description: product.description,
+      materials: product.materials,
+      categoryName: product.categoryName
+    })
+    // Track quick view click
+    if (user) {
+      trackClick(user.id, product.id, {
+        source: 'product_card',
+        elementClicked: 'quick_view_button'
+      })
+    }
   }
 
   return (
     <Link to={`/product/${product.id}`} className="group block w-full h-full relative overflow-hidden rounded-2xl bg-card border border-border shadow-sm hover:shadow-lg transition-all flex flex-col">
       {/* Image Container */}
       <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted border border-border">
-        {product.image ? (
-          <img 
-            src={product.image} 
-            alt={product.name} 
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '/products/product-vase.jpg'
-            }}
-          />
+        {safeImage ? (
+          <>
+            {/* Placeholder shown while loading */}
+            {!imageLoaded && (
+              <div className="absolute inset-0 bg-muted animate-pulse" />
+            )}
+            <img 
+              src={safeImage} 
+              alt={product.name} 
+              loading="lazy"
+              onLoad={() => setImageLoaded(true)}
+              className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+                imageLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-sm'
+              }`}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = FALLBACK_PRODUCT_IMAGE
+              }}
+            />
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-sand text-clay grain">
             <span className="text-sm font-medium">No Image</span>
@@ -63,10 +131,21 @@ export function ProductCard({ product }: { product: Product }) {
           </div>
         )}
         
+        {/* Quick View - Desktop hover */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+          <button
+            onClick={handleQuickView}
+            className="px-5 py-2.5 bg-background/90 backdrop-blur-md text-foreground font-semibold rounded-full text-xs shadow-lg hover:bg-background hover:scale-105 transition-all flex items-center gap-2 border border-border/50"
+          >
+            <Eye className="h-4 w-4" />
+            Quick View
+          </button>
+        </div>
+
         {/* Wishlist Button */}
         <button 
           onClick={handleWishlist}
-          className="absolute top-3 right-3 p-2 bg-background/80 backdrop-blur-md rounded-full shadow-sm hover:bg-background transition-colors z-10 group/btn"
+          className="absolute top-3 right-3 p-2 bg-background/80 backdrop-blur-md rounded-full shadow-sm hover:bg-background transition-colors z-20 group/btn"
         >
           <Heart className={`h-4 w-4 transition-colors ${inWishlist ? 'fill-red-500 text-red-500' : 'text-muted-foreground group-hover/btn:text-red-500'}`} />
         </button>
@@ -76,11 +155,26 @@ export function ProductCard({ product }: { product: Product }) {
       <div className="mt-4 space-y-1">
         <div className="flex justify-between items-start">
           <h3 className="text-sm font-semibold text-foreground truncate pr-2">{product.name}</h3>
-          <p className="text-sm font-bold text-primary">₹{product.price || '999'}</p>
+          <p className="text-sm font-bold text-primary">{formatCurrency(product.price, product.currency)}</p>
         </div>
         <p className="text-xs text-muted-foreground truncate">
-          By <span className="hover:text-primary transition-colors cursor-pointer">{product.seller_name || 'UdrCrafts Artisan'}</span>
+          {product.brand ? (
+            <span className="hover:text-primary transition-colors cursor-pointer">{product.brand}</span>
+          ) : (
+            <>By <span className="hover:text-primary transition-colors cursor-pointer">{product.seller_name || 'UdrCrafts Artisan'}</span></>
+          )}
         </p>
+
+        {/* Rating & Reviews */}
+        {(product.averageRating ?? 0) > 0 && (
+          <div className="flex items-center gap-2 mt-1">
+            <StarRating rating={product.averageRating!} size="sm" />
+            <span className="text-[11px] font-medium text-amber-600">{product.averageRating!.toFixed(1)}</span>
+            {product.reviewsCount && product.reviewsCount > 0 && (
+              <span className="text-[10px] text-muted-foreground">({product.reviewsCount})</span>
+            )}
+          </div>
+        )}
         
         {/* ML Explanation */}
         {product.explanation && (

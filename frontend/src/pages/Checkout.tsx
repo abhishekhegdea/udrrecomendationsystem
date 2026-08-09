@@ -3,10 +3,11 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useCart } from '@/contexts/CartContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { ArrowLeft, CreditCard, ShieldCheck, Truck, CheckCircle2 } from 'lucide-react'
-import axios from 'axios'
+import api from '@/lib/api'
+import { formatCurrency, getProductImageUrl } from '@/lib/utils'
 
 export function CheckoutPage() {
-  const { items, totalPrice, clearCart } = useCart()
+  const { items, totalPrice, clearCart, flushCartToServer } = useCart()
   const { user } = useAuth()
   const navigate = useNavigate()
   
@@ -14,6 +15,7 @@ export function CheckoutPage() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   
+  const displayCurrency = items[0]?.currency || 'INR'
   const tax = Math.floor(totalPrice * 0.05)
   const finalTotal = totalPrice + tax
   
@@ -29,10 +31,23 @@ export function CheckoutPage() {
     try {
       // Simulate Payment Delay
       await new Promise(resolve => setTimeout(resolve, 2000))
-      
+
+      // Sync the local cart to the server and get the persisted CartItem ids,
+      // so the order is built from the server cart (source of truth)
+      const cartItemIds = await flushCartToServer()
+
+      // Guard: if any item failed to persist, abort rather than silently
+      // placing an order that's missing items
+      if (cartItemIds.length !== items.length) {
+        setError('Could not sync your cart to the server. Please try again.')
+        return
+      }
+
       // Hit Backend to create Order
-      const res = await axios.post('http://localhost:3001/api/orders/checkout', {
+      await api.post('http://localhost:3001/api/orders/checkout', {
         userId: user.id,
+        cartItemIds,
+        // Legacy fallback kept for the server in case the cart has no persisted rows
         items: items.map(item => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -146,12 +161,12 @@ export function CheckoutPage() {
             {items.map(item => (
               <div key={item.id} className="flex gap-4">
                 <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                  {item.image && <img src={item.image} className="w-full h-full object-cover" alt="" />}
+                  {item.image && <img src={getProductImageUrl(item.image)} className="w-full h-full object-cover" alt="" />}
                 </div>
                 <div className="flex-1">
                   <p className="font-bold line-clamp-1">{item.name}</p>
                   <p className="text-muted-foreground">Qty: {item.quantity}</p>
-                  <p className="font-semibold text-primary">₹{item.price * item.quantity}</p>
+                  <p className="font-semibold text-primary">{formatCurrency(item.price * item.quantity, item.currency)}</p>
                 </div>
               </div>
             ))}
@@ -160,7 +175,7 @@ export function CheckoutPage() {
           <div className="border-t border-border pt-6 space-y-4 text-sm mb-6">
             <div className="flex justify-between text-muted-foreground">
               <span>Subtotal</span>
-              <span>₹{totalPrice}</span>
+              <span>{formatCurrency(totalPrice, displayCurrency)}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Shipping</span>
@@ -168,11 +183,11 @@ export function CheckoutPage() {
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Tax (5%)</span>
-              <span>₹{tax}</span>
+              <span>{formatCurrency(tax, displayCurrency)}</span>
             </div>
             <div className="pt-4 border-t border-border flex justify-between font-bold text-xl text-foreground">
               <span>Total to Pay</span>
-              <span>₹{finalTotal}</span>
+              <span>{formatCurrency(finalTotal, displayCurrency)}</span>
             </div>
           </div>
           
@@ -183,7 +198,7 @@ export function CheckoutPage() {
           >
             {loading ? 'Processing Payment...' : (
               <>
-                <ShieldCheck className="h-5 w-5" /> Pay ₹{finalTotal} Securely
+                <ShieldCheck className="h-5 w-5" /> Pay {formatCurrency(finalTotal, displayCurrency)} Securely
               </>
             )}
           </button>

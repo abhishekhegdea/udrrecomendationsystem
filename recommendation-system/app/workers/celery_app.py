@@ -28,6 +28,10 @@ celery_app.conf.update(
         'retrain-lightfm-model': {
             'task': 'app.workers.tasks.retrain_collaborative_model',
             'schedule': 86400.0, # Every day
-        }
+        },
+        'cleanup-user-behaviour': {
+            'task': 'app.workers.tasks.cleanup_user_behaviour',
+            'schedule': 604800.0, # Every week (7 * 24 * 60 * 60)
+        },
     }
 )

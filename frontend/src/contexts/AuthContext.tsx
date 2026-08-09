@@ -123,8 +123,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
-  const updateUser = useCallback((data: Partial<User>) => {
-    setUser((prev) => (prev ? { ...prev, ...data } : null))
+  const updateUser = useCallback(async (data: Partial<User>) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch('http://localhost:3001/api/auth/me', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(data)
+        });
+      }
+      setUser((prev) => (prev ? { ...prev, ...data } : null));
+    } catch (err) {
+      console.error('Failed to update user profile', err);
+    }
   }, [])
 
   return (

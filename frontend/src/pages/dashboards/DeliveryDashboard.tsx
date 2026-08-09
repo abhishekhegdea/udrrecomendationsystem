@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MapPin, Truck, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import axios from 'axios'
+import api from '@/lib/api'
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.08 } } }
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }
@@ -15,15 +15,15 @@ export function DeliveryDashboard() {
 
   useEffect(() => {
     if (user?.id) {
-      axios.get('http://localhost:3001/api/partner/me', {
+      api.get('http://localhost:3001/api/partner/me', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       })
       .then(res => {
         setPartner(res.data.user)
-        return axios.get(`http://localhost:3001/api/partner/orders/${res.data.user.id}`)
+        return api.get(`http://localhost:3001/api/partner/orders/${res.data.user.id}`)
       })
       .then(res => setOrders(res.data))
-      .catch(console.error)
+      .catch(() => {})
     }
   }, [user])
 
@@ -101,9 +101,9 @@ export function DeliveryDashboard() {
                       <button 
                         onClick={async () => {
                           try {
-                            await axios.post(`http://localhost:3001/api/partner/orders/${order.id}/deliver`, { partnerId: user?.id })
+                            await api.post(`http://localhost:3001/api/partner/orders/${order.id}/deliver`, { partnerId: user?.id })
                             // Refresh orders list
-                            axios.get(`http://localhost:3001/api/partner/orders/${user?.id}`).then(res => setOrders(res.data))
+                            api.get(`http://localhost:3001/api/partner/orders/${user?.id}`).then(res => setOrders(res.data))
                           } catch (err) {
                             console.error('Failed to mark delivered', err)
                           }

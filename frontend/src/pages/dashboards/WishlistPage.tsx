@@ -1,45 +1,61 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Heart, Loader2 } from 'lucide-react'
 import { useWishlist } from '@/contexts/WishlistContext'
-import { useCart } from '@/contexts/CartContext'
 import { ProductCard } from '@/components/ui/ProductCard'
-import axios from 'axios'
+import api from '@/lib/api'
+import { getProductImageUrl } from '@/lib/utils'
 
 export function WishlistPage() {
   const { items } = useWishlist()
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    const fetchWishlistProducts = async () => {
-      setLoading(true)
-      try {
-        const productIds = items.map(i => i.productId)
-        if (productIds.length > 0) {
-          // Fetch products by ids using a search trick or direct endpoint
-          // For simplicity, we can fetch all and filter or add an endpoint for array of IDs
-          // In a real app we'd have a specific endpoint. Here we map individual queries:
-          const fetches = productIds.map(id => axios.get(`http://localhost:3001/api/products/${id}`))
-          const results = await Promise.all(fetches)
-          setProducts(results.map(r => r.data))
-        } else {
-          setProducts([])
-        }
-      } catch (err) {
-        console.error('Failed to load wishlist products', err)
-      } finally {
+    mountedRef.current = true
+
+    const productIds = items.map(i => i.productId)
+    if (productIds.length === 0) {
+      setProducts([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    // Fetch all products in parallel; skip individual failures
+    const fetchAll = async () => {
+      const fetches = productIds.map(id =>
+        api.get(`http://localhost:3001/api/products/${id}`, {
+          signal: controller.signal,
+          timeout: 4000,
+        }).then(r => r.data).catch(() => null)
+      )
+      const results = (await Promise.all(fetches)).filter(Boolean)
+      if (mountedRef.current) {
+        setProducts(results)
         setLoading(false)
       }
     }
-    
-    fetchWishlistProducts()
+
+    fetchAll()
+
+    return () => {
+      mountedRef.current = false
+      controller.abort()
+    }
   }, [items])
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-7xl min-h-[60vh]">
       <h1 className="text-3xl font-display font-bold text-foreground mb-2">My Wishlist</h1>
-      <p className="text-muted-foreground mb-8">Items you have saved for later.</p>
+      <p className="text-muted-foreground mb-8">{items.length} saved {items.length === 1 ? 'item' : 'items'}</p>
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>
@@ -57,14 +73,14 @@ export function WishlistPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {products.map((product) => {
+          {products.map((product: any) => {
             const cardProduct = {
               id: product.id,
-              name: product.name,
-              price: product.price,
-              seller_name: product.seller?.businessName || product.seller?.firstName,
+              name: product.name || 'Untitled Product',
+              price: product.price || 0,
+              seller_name: product.seller?.businessName || product.seller?.firstName || 'Artisan',
               seller_new: product.seller?.isNewSeller,
-              image: product.images?.[0]?.url || '/products/product-vase.jpg'
+              image: getProductImageUrl(product.images?.[0]?.url)
             }
             return <ProductCard key={product.id} product={cardProduct} />
           })}

@@ -64,9 +64,17 @@ celery -A app.workers.celery_app worker --loglevel=info -P solo
 
 ---
 
-## 5. Start the Frontend (React)
+## 5. Start the
+
+1. **Backend (Node.js/Express)**
 ```bash
-cd d:\OneDrive\Desktop\udrcrafts
+cd backend
+npm run dev
+```
+
+2. **Frontend (React/Vite)**
+```bash
+cd frontend
 npm run dev
 ```
 *(Runs on port 5173).*

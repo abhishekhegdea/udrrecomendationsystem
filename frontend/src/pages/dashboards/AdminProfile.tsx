@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { User, Truck, ShoppingBag, Mail, Phone, Calendar, Search, MapPin, Building2, Star } from 'lucide-react'
-import axios from 'axios'
+import api, { isCancel } from '@/lib/api'
+import { useAbortSignal } from '@/hooks/useApiCall'
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.08 } } }
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }
@@ -18,24 +19,31 @@ export function AdminProfile() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
+  const { getSignal, mountedRef } = useAbortSignal()
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [usersRes, sellersRes, partnersRes] = await Promise.all([
-          axios.get('http://localhost:3001/api/admin/users'),
-          axios.get('http://localhost:3001/api/admin/sellers'),
-          axios.get('http://localhost:3001/api/admin/partners')
+          api.get('http://localhost:3001/api/admin/users', { signal: getSignal() }),
+          api.get('http://localhost:3001/api/admin/sellers', { signal: getSignal() }),
+          api.get('http://localhost:3001/api/admin/partners', { signal: getSignal() })
         ])
-        setUsers(usersRes.data)
-        setSellers(sellersRes.data)
-        setPartners(partnersRes.data)
+        if (mountedRef.current) {
+          setUsers(usersRes.data)
+          setSellers(sellersRes.data)
+          setPartners(partnersRes.data)
+        }
       } catch (err) {
-        console.error('Failed to load directory data', err)
+        if (!isCancel(err) && mountedRef.current) {
+          console.error('Failed to load directory data', err)
+        }
       } finally {
-        setLoading(false)
+        if (mountedRef.current) setLoading(false)
       }
     }
     fetchData()
+    return () => getSignal()
   }, [])
 
   const tabs = [
@@ -198,9 +206,9 @@ export function AdminProfile() {
                                 onClick={async () => {
                                   try {
                                     const endpoint = activeTab === 'SELLERS' ? 'approve-seller' : 'approve-partner'
-                                    await axios.put(`http://localhost:3001/api/admin/${endpoint}/${person.id}`)
+                                    await api.put(`http://localhost:3001/api/admin/${endpoint}/${person.id}`)
                                     // Refresh data
-                                    const res = await axios.get(`http://localhost:3001/api/admin/${activeTab.toLowerCase()}`)
+                                    const res = await api.get(`http://localhost:3001/api/admin/${activeTab.toLowerCase()}`)
                                     if (activeTab === 'SELLERS') setSellers(res.data)
                                     if (activeTab === 'PARTNERS') setPartners(res.data)
                                   } catch (err) {

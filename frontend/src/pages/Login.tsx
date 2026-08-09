@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { User, ShieldCheck, Truck, ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -20,8 +20,32 @@ export function LoginPage() {
     // Partner
     dateOfBirth: '', address: '', vehicleType: '', vehicleNumber: '', rcBook: '', drivingLicense: '', vehicleInsurance: '', emergencyContactName: '', emergencyContactNumber: '',
     // Shared Financials & KYC
-    bankAccount: '', ifscCode: '', upiId: '', panNumber: '', aadhaarNumber: ''
+    bankAccount: '', ifscCode: '', upiId: '', panNumber: '', aadhaarNumber: '',
+    // Location
+    stateId: '', cityId: ''
   })
+
+  const [states, setStates] = useState<any[]>([])
+  const [cities, setCities] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch('http://localhost:3001/api/locations/states')
+      .then(res => res.json())
+      .then(data => setStates(data))
+      .catch(err => console.error(err))
+  }, [])
+
+  const handleStateChange = (stateId: string) => {
+    setFormData(prev => ({ ...prev, stateId, cityId: '' }))
+    if (stateId) {
+      fetch(`http://localhost:3001/api/locations/cities/${stateId}`)
+        .then(res => res.json())
+        .then(data => setCities(data))
+        .catch(err => console.error(err))
+    } else {
+      setCities([])
+    }
+  }
 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -98,7 +122,8 @@ export function LoginPage() {
 
     try {
       if (isLogin) {
-        await login(formData.email, formData.password, role)
+        const identifier = role === 'delivery' ? formData.phone : formData.email
+        await login(identifier, formData.password, role)
       } else {
         await signup(formData, role)
       }
@@ -144,8 +169,17 @@ export function LoginPage() {
           {isLogin && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground ml-1">Email</label>
-                <input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full h-12 bg-muted border border-border rounded-xl px-4 focus:ring-2 focus:ring-primary outline-none" />
+                <label className="text-sm font-medium text-foreground ml-1">
+                  {role === 'delivery' ? 'Phone Number' : 'Email'}
+                </label>
+                <input 
+                  type={role === 'delivery' ? 'tel' : 'email'} 
+                  name={role === 'delivery' ? 'phone' : 'email'} 
+                  required 
+                  value={role === 'delivery' ? formData.phone : formData.email} 
+                  onChange={handleInputChange} 
+                  className="w-full h-12 bg-muted border border-border rounded-xl px-4 focus:ring-2 focus:ring-primary outline-none" 
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground ml-1">Password</label>
@@ -168,6 +202,34 @@ export function LoginPage() {
                 <div className="space-y-1"><label className="text-xs font-medium">Email</label><input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
                 <div className="space-y-1"><label className="text-xs font-medium">Phone</label><input type="tel" name="phone" required value={formData.phone} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
                 <div className="space-y-1"><label className="text-xs font-medium">Password</label><input type="password" name="password" required value={formData.password} onChange={handleInputChange} className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" /></div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">State (Optional)</label>
+                    <select 
+                      name="stateId"
+                      value={formData.stateId} 
+                      onChange={(e) => handleStateChange(e.target.value)}
+                      className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none"
+                    >
+                      <option value="">Select State</option>
+                      {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">City (Optional)</label>
+                    <select 
+                      name="cityId"
+                      value={formData.cityId} 
+                      onChange={handleInputChange}
+                      disabled={!formData.stateId}
+                      className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none disabled:opacity-50"
+                    >
+                      <option value="">Select City</option>
+                      {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
                 
                 {(role === 'seller' || role === 'delivery') && (
                   <>

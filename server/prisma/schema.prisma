@@ -20,6 +20,11 @@ model User {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
+  stateId          String?
+  state            State?           @relation(fields: [stateId], references: [id])
+  cityId           String?
+  city             City?            @relation(fields: [cityId], references: [id])
+
   orders           Order[]
   wishlist         Wishlist[]
   cart             CartItem[]
@@ -60,8 +65,20 @@ model Seller {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
+  stateId          String?
+  state            State?     @relation(fields: [stateId], references: [id])
+  cityId           String?
+  city             City?      @relation(fields: [cityId], references: [id])
+
   products         Product[]
   sellerScores     SellerScore[]
+  userBehaviours   UserBehaviour[]
+
+  // Cancellation penalty tracking
+  cancelPenalty    Float      @default(0) // Cumulative negative score for cancellations
+
+  // Quality-return penalty tracking
+  returnPenalty    Float      @default(0) // Cumulative negative score for quality-issue returns
 }
 
 model DeliveryPartner {
@@ -116,6 +133,7 @@ model Category {
   description   String?
   products      Product[]
   subcategories Subcategory[]
+  userBehaviours UserBehaviour[]
 }
 
 model Subcategory {
@@ -124,6 +142,13 @@ model Subcategory {
   categoryId    String
   category      Category  @relation(fields: [categoryId], references: [id])
   products      Product[]
+}
+
+model Brand {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  products      Product[]
+  userBehaviours UserBehaviour[]
 }
 
 model Product {
@@ -138,8 +163,15 @@ model Product {
   tags          String[]
   materials     String[]
 
-  // Embeddings for pgvector (Sentence Transformers usually output 384 or 768 dims, using 768)
-  embedding     Unsupported("vector(768)")?
+  // Etsy CSV fields
+  averageRating Float     @default(0)
+  reviewsCount  Int       @default(0)
+  etsyUrl       String?
+  brand         String?
+  currency      String    @default("USD")
+
+  // Embeddings for pgvector (Sentence Transformers usually output 384 or 768 dims, using 384)
+  embedding     Unsupported("vector(384)")?
 
   sellerId      String
   seller        Seller    @relation(fields: [sellerId], references: [id])
@@ -149,6 +181,9 @@ model Product {
 
   subcategoryId String?
   subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id])
+
+  brandId       String?
+  brandRelation Brand?       @relation(fields: [brandId], references: [id])
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -161,6 +196,7 @@ model Product {
   reviews       Review[]
   views         ProductView[]
   clicks        ClickEvent[]
+  userBehaviours UserBehaviour[]
 }
 
 model ProductImage {
@@ -195,6 +231,23 @@ model OrderItem {
   product       Product   @relation(fields: [productId], references: [id])
   quantity      Int
   priceAtBuy    Float
+
+  // Audit reference to the persisted CartItem row this order item was
+  // created from. Plain nullable string (no FK) so the reference survives
+  // even after the cart row is consumed/deleted at checkout.
+  cartItemId    String?
+
+  // Cancellation tracking
+  cancelled     Boolean   @default(false)
+  cancelledAt   DateTime?
+  cancelledBy   String?   // 'SELLER', 'CUSTOMER', 'ADMIN'
+
+  // Return tracking
+  returned      Boolean   @default(false)
+  returnedAt    DateTime?
+  returnReason  String?   // 'QUALITY', 'DAMAGED', 'MISTAKE', 'OTHER'
+  returnReviewText String? // Private feedback captured at return time
+  returnRating  Int?      // 1-5 rating given alongside the return
 }
 
 model Wishlist {
@@ -285,7 +338,16 @@ model UserBehaviour {
   id            String    @id @default(uuid())
   userId        String
   user          User      @relation(fields: [userId], references: [id])
-  eventType     String    // SHARE, REPEAT_VISIT, etc.
+  eventType     String    // PRODUCT_VIEW, SEARCH, CLICK, WISHLIST, CART, PURCHASE, REVIEW, RATING
+  productId     String?
+  product       Product?  @relation(fields: [productId], references: [id])
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id])
+  sellerId      String?
+  seller        Seller?   @relation(fields: [sellerId], references: [id])
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
+  source        String?   // Page/component where the event originated
   metadata      Json?
   createdAt     DateTime  @default(now())
 }
@@ -334,6 +396,16 @@ model SellerScore {
   updatedAt     DateTime  @updatedAt
 }
 
+model FairnessConfig {
+  id                  Int       @id @default(autoincrement())
+  boostAmount         Float     @default(0.15)        @map("boost_amount")
+  newSellerRatio      Float     @default(0.15)        @map("new_seller_ratio")
+  maxPerSellerRatio   Float     @default(0.20)        @map("max_per_seller_ratio")
+  updatedAt           DateTime  @updatedAt             @map("updated_at")
+
+  @@map("FairnessConfig")
+}
+
 // --- LOCATION DATA ---
 
 model Country {
@@ -348,6 +420,8 @@ model State {
   countryId     String
   country       Country   @relation(fields: [countryId], references: [id])
   cities        City[]
+  users         User[]
+  sellers       Seller[]
 }
 
 model City {
@@ -355,6 +429,8 @@ model City {
   name          String
   stateId       String
   state         State     @relation(fields: [stateId], references: [id])
+  users         User[]
+  sellers       Seller[]
 }
 
 model Language {

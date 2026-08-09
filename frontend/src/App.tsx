@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { CartProvider } from '@/contexts/CartContext'
 import { WishlistProvider } from '@/contexts/WishlistContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import { QuickViewProvider } from '@/contexts/QuickViewContext'
+import { Toaster } from 'sonner'
 import { LoginPage } from '@/pages/Login'
 import { DashboardPage } from '@/pages/Dashboard'
 import { ProfilePage } from '@/pages/Profile'
@@ -58,6 +60,7 @@ import { DeliveryLayout } from '@/components/Layout/DeliveryLayout'
 import { CustomerLayout } from '@/components/Layout/CustomerLayout'
 import { AdminDashboard } from '@/pages/dashboards/AdminDashboard'
 import { AdminProfile } from '@/pages/dashboards/AdminProfile'
+import { FairnessConfigPanel } from '@/pages/dashboards/FairnessConfigPanel'
 import { SellerDashboard } from '@/pages/dashboards/SellerDashboard'
 import { SellerProductsPage } from '@/pages/dashboards/SellerProductsPage'
 import { DeliveryDashboard } from '@/pages/dashboards/DeliveryDashboard'
@@ -98,6 +101,7 @@ function AppRoutes() {
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminLayout /></ProtectedRoute>}>
         <Route index element={<AdminDashboard />} />
         <Route path="profile" element={<AdminProfile />} />
+        <Route path="fairness" element={<FairnessConfigPanel />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
@@ -139,7 +143,18 @@ function App() {
           <CartProvider>
             <WishlistProvider>
               <ThemeProvider defaultTheme="light" storageKey="udrcrafts-theme">
-                <AppRoutes />
+                <QuickViewProvider>
+                  <AppRoutes />
+                  <Toaster
+                    position="top-right"
+                    richColors
+                    closeButton
+                    toastOptions={{
+                      style: { fontFamily: 'inherit' },
+                      duration: 3000
+                    }}
+                  />
+                </QuickViewProvider>
               </ThemeProvider>
             </WishlistProvider>
           </CartProvider>

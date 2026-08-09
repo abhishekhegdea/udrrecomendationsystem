@@ -1,6 +1,25 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import axios from 'axios'
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react'
+import api from '@/lib/api'
 import { useAuth } from './AuthContext'
+
+const LS_KEY = 'udrcrafts_wishlist'
+
+function loadFromStorage(): { productId: string }[] {
+  try {
+    const saved = localStorage.getItem(LS_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+function saveToStorage(items: { productId: string }[]) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(items))
+  } catch {
+    // localStorage full or unavailable — silently ignore
+  }
+}
 
 export interface WishlistItem {
   productId: string
@@ -16,59 +35,59 @@ const WishlistContext = createContext<WishlistContextType | undefined>(undefined
 
 export function WishlistProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth()
-  const [items, setItems] = useState<WishlistItem[]>([])
+  // Always seed from localStorage first so wishlist shows immediately
+  const [items, setItems] = useState<WishlistItem[]>(loadFromStorage)
+  const fetchAbortRef = useRef<AbortController | null>(null)
 
-  // Load wishlist
+  // Sync with server in the background (non-blocking)
   useEffect(() => {
+    fetchAbortRef.current?.abort()
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
+
     if (isAuthenticated && user) {
-      // Load from DB
-      axios.get(`http://localhost:3001/api/products/wishlist/${user.id}`)
-        .then(res => setItems(res.data))
-        .catch(console.error)
-    } else {
-      // Load from local storage
-      const saved = localStorage.getItem('udrcrafts_wishlist')
-      if (saved) {
-        try {
-          setItems(JSON.parse(saved))
-        } catch (e) {
-          console.error('Failed to parse wishlist')
-        }
-      } else {
-        setItems([])
-      }
+      api.get(`http://localhost:3001/api/products/wishlist/${user.id}`, {
+        signal: controller.signal,
+        timeout: 4000,
+      })
+        .then(res => {
+          const serverItems = Array.isArray(res.data) ? res.data : []
+          setItems(serverItems)
+          saveToStorage(serverItems)
+        })
+        .catch(() => {
+          // Server unavailable — keep localStorage items
+        })
     }
+
+    return () => fetchAbortRef.current?.abort()
   }, [isAuthenticated, user])
 
-  // Save to local storage if not authenticated
+  // Persist to localStorage whenever items change
   useEffect(() => {
-    if (!isAuthenticated) {
-      localStorage.setItem('udrcrafts_wishlist', JSON.stringify(items))
-    }
-  }, [items, isAuthenticated])
+    saveToStorage(items)
+  }, [items])
 
   const toggleWishlist = async (productId: string) => {
     const exists = items.some(i => i.productId === productId)
-    
-    // Optimistic UI update
+
+    // Optimistic UI update (saved to localStorage via the items effect)
     if (exists) {
       setItems(prev => prev.filter(i => i.productId !== productId))
     } else {
       setItems(prev => [...prev, { productId }])
     }
 
+    // Best-effort server sync
     if (isAuthenticated && user) {
       try {
         if (exists) {
-          await axios.delete(`http://localhost:3001/api/products/wishlist/${user.id}/${productId}`)
+          await api.delete(`http://localhost:3001/api/products/wishlist/${user.id}/${productId}`, { timeout: 4000 })
         } else {
-          await axios.post(`http://localhost:3001/api/products/wishlist`, { userId: user.id, productId })
+          await api.post(`http://localhost:3001/api/products/wishlist`, { userId: user.id, productId }, { timeout: 4000 })
         }
-      } catch (err) {
-        console.error('Wishlist sync failed', err)
-        // Revert on failure (simple version: just refresh)
-        const res = await axios.get(`http://localhost:3001/api/products/wishlist/${user.id}`)
-        setItems(res.data)
+      } catch {
+        // Server unavailable — localStorage already updated
       }
     }
   }

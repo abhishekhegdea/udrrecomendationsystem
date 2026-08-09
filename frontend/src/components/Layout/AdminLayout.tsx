@@ -3,7 +3,7 @@ import { Outlet, useNavigate, NavLink, useLocation } from 'react-router-dom'
 import { Navbar } from './Navbar'
 import { useAuth } from '@/contexts/AuthContext'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, LayoutDashboard, User, Settings, ChevronLeft, ChevronRight, LogOut, ShieldCheck } from 'lucide-react'
+import { X, LayoutDashboard, User, Settings, Scale, ChevronLeft, ChevronRight, LogOut, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function AdminLayout() {
@@ -21,6 +21,7 @@ export function AdminLayout() {
   const navItems = [
     { icon: LayoutDashboard, label: 'Dispatch Center', path: '/admin' },
     { icon: User, label: 'Admin Profile', path: '/admin/profile' },
+    { icon: Scale, label: 'Seller Fairness', path: '/admin/fairness' },
     { icon: Settings, label: 'System Settings', path: '/admin/settings' },
   ]
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Upload, X, Loader2 } from 'lucide-react'
-import axios from 'axios'
+import api, { isCancel } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAbortSignal } from '@/hooks/useApiCall'
 
 export function ProductUpload({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
   const { user } = useAuth()
@@ -22,10 +23,13 @@ export function ProductUpload({ onClose, onSuccess }: { onClose: () => void, onS
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const { getSignal, mountedRef } = useAbortSignal()
+
   useEffect(() => {
-    axios.get('http://localhost:3001/api/products/categories/all')
-      .then(res => setCategories(res.data))
-      .catch(console.error)
+    api.get('http://localhost:3001/api/products/categories/all', { signal: getSignal() })
+      .then(res => { if (mountedRef.current) setCategories(res.data) })
+      .catch(err => { if (!isCancel(err)) console.error('Failed to load categories', err) })
+    return () => getSignal()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,7 +38,7 @@ export function ProductUpload({ onClose, onSuccess }: { onClose: () => void, onS
     setError('')
 
     try {
-      await axios.post('http://localhost:3001/api/seller/products', {
+      await api.post('http://localhost:3001/api/seller/products', {
         ...formData,
         sellerId: user?.id,
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),

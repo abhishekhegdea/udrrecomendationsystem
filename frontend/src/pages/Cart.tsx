@@ -1,13 +1,15 @@
 import { useCart } from '@/contexts/CartContext'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trash2, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Trash2, CheckCircle2, Loader2 } from 'lucide-react'
 import { useState } from 'react'
+import { formatCurrency, getProductImageUrl } from '@/lib/utils'
 
 export function CartPage() {
-  const { items, updateQuantity, removeItem, totalPrice, clearCart } = useCart()
+  const { items, updateQuantity, removeItem, totalPrice, clearCart, isSyncing } = useCart()
   const [checkingOut, setCheckingOut] = useState(false)
   const [success, setSuccess] = useState(false)
   const navigate = useNavigate()
+  const displayCurrency = items[0]?.currency || 'INR'
 
   const handleCheckout = () => {
     navigate('/checkout')
@@ -44,7 +46,15 @@ export function CartPage() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-5xl">
-      <h1 className="text-3xl font-display font-bold text-foreground mb-8">Shopping Cart</h1>
+      <div className="flex items-center gap-3 mb-8">
+        <h1 className="text-3xl font-display font-bold text-foreground">Shopping Cart</h1>
+        {isSyncing && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-muted text-muted-foreground text-xs font-medium rounded-full border border-border">
+            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            Syncing cart…
+          </span>
+        )}
+      </div>
 
       <div className="grid lg:grid-cols-3 gap-12">
         {/* Cart Items */}
@@ -52,11 +62,11 @@ export function CartPage() {
           {items.map(item => (
             <div key={item.id} className="flex items-center gap-6 p-4 bg-card border border-border rounded-2xl shadow-sm">
               <div className="w-24 h-24 bg-muted rounded-xl flex-shrink-0 overflow-hidden">
-                {item.image && <img src={item.image} alt={item.name} className="w-full h-full object-cover" />}
+                {item.image && <img src={getProductImageUrl(item.image)} alt={item.name} loading="lazy" className="w-full h-full object-cover" />}
               </div>
               <div className="flex-1">
                 <h3 className="font-bold text-foreground">{item.name}</h3>
-                <p className="text-primary font-semibold mt-1">₹{item.price}</p>
+                <p className="text-primary font-semibold mt-1">{formatCurrency(item.price, item.currency)}</p>
                 <div className="flex items-center gap-4 mt-4">
                   <div className="flex items-center border border-border rounded-lg">
                     <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="px-3 py-1 text-foreground hover:bg-muted rounded-l-lg transition-colors">-</button>
@@ -69,7 +79,7 @@ export function CartPage() {
                 </div>
               </div>
               <div className="text-right font-bold text-lg hidden sm:block">
-                ₹{item.price * item.quantity}
+                {formatCurrency(item.price * item.quantity, item.currency)}
               </div>
             </div>
           ))}
@@ -81,7 +91,7 @@ export function CartPage() {
           <div className="space-y-4 text-sm mb-6">
             <div className="flex justify-between text-muted-foreground">
               <span>Subtotal</span>
-              <span>₹{totalPrice}</span>
+              <span>{formatCurrency(totalPrice, displayCurrency)}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Shipping</span>
@@ -89,11 +99,11 @@ export function CartPage() {
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Tax</span>
-              <span>₹{Math.floor(totalPrice * 0.05)}</span>
+              <span>{formatCurrency(Math.floor(totalPrice * 0.05), displayCurrency)}</span>
             </div>
             <div className="pt-4 border-t border-border flex justify-between font-bold text-lg text-foreground">
               <span>Total</span>
-              <span>₹{totalPrice + Math.floor(totalPrice * 0.05)}</span>
+              <span>{formatCurrency(totalPrice + Math.floor(totalPrice * 0.05), displayCurrency)}</span>
             </div>
           </div>
           

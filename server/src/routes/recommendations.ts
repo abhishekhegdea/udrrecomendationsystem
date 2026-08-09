@@ -44,4 +44,15 @@ router.get('/new-arrivals', async (req, res) => {
   }
 });
 
+// GET also-bought — products frequently purchased together with the given product
+router.get('/also-bought/:productId', async (req, res) => {
+  try {
+    const response = await axios.get(`${ML_SERVICE_URL}/also-bought/${req.params.productId}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching also-bought:', error);
+    res.status(500).json({ error: 'Failed to fetch also-bought products' });
+  }
+});
+
 export default router;

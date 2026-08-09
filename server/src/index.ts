@@ -1,3 +1,4 @@
+// Trigger restart for Prisma client update 2
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -8,7 +9,9 @@ import productRoutes from './routes/products';
 import eventRoutes from './routes/events';
 import recommendationRoutes from './routes/recommendations';
 import orderRoutes from './routes/orders';
+import cartRoutes from './routes/cart';
 import adminRoutes from './routes/admin';
+import locationRoutes from './routes/locations';
 
 dotenv.config();
 
@@ -27,7 +30,9 @@ app.use('/api/products', productRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/cart', cartRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/locations', locationRoutes);
 
 // Basic health check
 app.get('/api/health', (req, res) => {

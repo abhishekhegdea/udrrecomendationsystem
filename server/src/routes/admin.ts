@@ -9,7 +9,11 @@ router.get('/orders', async (req, res) => {
     const orders = await prisma.order.findMany({
       include: {
         user: { select: { firstName: true, lastName: true, phone: true } },
-        items: true,
+        items: {
+          include: {
+            product: { select: { name: true, images: true } }
+          }
+        },
         deliveryPartner: { select: { firstName: true, lastName: true, phone: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -147,6 +151,7 @@ router.get('/debug/stats', async (req, res) => {
     const totalOrders = await prisma.order.count();
     const totalWishlists = await prisma.wishlist.count();
     const totalViews = await prisma.productView.count();
+    const totalCartEvents = await prisma.userBehaviour.count({ where: { eventType: 'CART' } });
     
     // Send back all the seeded buyers so the UI dropdown can select them
     const buyers = await prisma.user.findMany({
@@ -161,6 +166,7 @@ router.get('/debug/stats', async (req, res) => {
       totalOrders,
       totalWishlists,
       totalViews,
+      totalCartEvents,
       buyers
     });
   } catch (error) {
@@ -192,7 +198,29 @@ router.get('/debug/buyer/:id', async (req, res) => {
       select: { query: true }
     });
 
-    res.json({ views, purchases, wishlist, searches });
+    // Cart activity traces — UserBehaviour CART events (add/remove/update)
+    // with product info, newest first (capped for readability)
+    const cart = await prisma.userBehaviour.findMany({
+      where: { userId, eventType: 'CART' },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        product: { select: { name: true, category: { select: { name: true } } } }
+      }
+    });
+
+    // Return traces — UserBehaviour RETURN events carrying the reason /
+    // review / rating in metadata (qualityIssue flags brand penalties)
+    const returns = await prisma.userBehaviour.findMany({
+      where: { userId, eventType: 'RETURN' },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        product: { select: { name: true, category: { select: { name: true } } } }
+      }
+    });
+
+    res.json({ views, purchases, wishlist, searches, cart, returns });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch buyer history' });
   }

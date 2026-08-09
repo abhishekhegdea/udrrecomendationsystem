@@ -1,6 +1,6 @@
 from app.models import Product, Seller
 from sqlalchemy.orm import Session
-import random
+from app.ml.seller_boost import fair_rank
 
 class HybridRanker:
     def __init__(self, db: Session):
@@ -38,31 +38,51 @@ class HybridRanker:
         )
         return score
 
-    def apply_fairness_ranking(self, ranked_products: list, total_slots: int = 10) -> list:
+    def apply_fairness_ranking(
+        self,
+        ranked_products: list,
+        total_slots: int = 10,
+        *,
+        boost_amount: float | None = None,
+        new_seller_ratio: float | None = None,
+        max_per_seller_ratio: float | None = None,
+        penalty_weight: float | None = None,
+    ) -> list:
         """
-        Applies the 15% New Seller Boost.
-        Ensures that at least ~15% of the recommended products come from new sellers.
+        Applies the full 5-stage seller fairness pipeline (cancel penalty,
+        score boost, diversity cap, slot reservation, interleaving).
+
+        Delegates to :func:`app.ml.seller_boost.fair_rank`.
+
+        Parameters
+        ----------
+        ranked_products : list
+            Candidate products sorted by ``final_score`` descending.
+        total_slots : int
+            How many recommendations to return.
+        boost_amount : float, optional
+            Score boost for new sellers.  Uses DB config if not provided.
+        new_seller_ratio : float, optional
+            Fraction of slots reserved for new sellers.
+        max_per_seller_ratio : float, optional
+            Max fraction of slots one seller can occupy.
+        penalty_weight : float, optional
+            Multiplier for the seller's cancelPenalty.
         """
-        new_seller_slots = max(1, int(total_slots * 0.15))
-        
-        final_list = []
-        new_seller_products = [p for p in ranked_products if p.seller and p.seller.isNewSeller]
-        established_products = [p for p in ranked_products if p.seller and not p.seller.isNewSeller]
+        # If dynamic config wasn't passed, read it from the DB
+        if boost_amount is None or new_seller_ratio is None or max_per_seller_ratio is None:
+            from app.core.fairness_config import get_config
+            cfg = get_config(self.db)
+            boost_amount = boost_amount if boost_amount is not None else cfg.boost_amount
+            new_seller_ratio = new_seller_ratio if new_seller_ratio is not None else cfg.new_seller_ratio
+            max_per_seller_ratio = max_per_seller_ratio if max_per_seller_ratio is not None else cfg.max_per_seller_ratio
 
-        # Take top new seller products for the reserved slots
-        final_list.extend(new_seller_products[:new_seller_slots])
-        
-        # Fill the rest with the highest ranking established products
-        remaining_slots = total_slots - len(final_list)
-        final_list.extend(established_products[:remaining_slots])
-
-        # If we didn't have enough established products, fill with more new seller products
-        if len(final_list) < total_slots:
-            final_list.extend(new_seller_products[new_seller_slots:new_seller_slots + (total_slots - len(final_list))])
-
-        # Shuffle slightly for diversity or sort by score again? 
-        # Best practice is to interleave them so new sellers aren't just dumped at the bottom.
-        # We will sort them by their original calculated score, but giving new sellers an artificial bump.
-        # For simplicity here, we'll shuffle the new sellers into the top 50% of the results.
-        random.shuffle(final_list)
-        return final_list[:total_slots]
+        return fair_rank(
+            ranked_products,
+            total_slots=total_slots,
+            boost_amount=boost_amount,
+            new_seller_ratio=new_seller_ratio,
+            max_per_seller_ratio=max_per_seller_ratio,
+            attribute="final_score",
+            penalty_weight=penalty_weight or 0.02,
+        )

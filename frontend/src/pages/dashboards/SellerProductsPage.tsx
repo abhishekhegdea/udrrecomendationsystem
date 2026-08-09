@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/contexts/AuthContext'
-import axios from 'axios'
+import { formatCurrency, getProductImageUrl } from '@/lib/utils'
+import api from '@/lib/api'
 
 export function SellerProductsPage() {
   const { user } = useAuth()
@@ -21,7 +22,7 @@ export function SellerProductsPage() {
   const fetchProducts = async () => {
     try {
       setLoading(true)
-      const res = await axios.get(`http://localhost:3001/api/seller/products/list/${user?.id}`)
+      const res = await api.get(`http://localhost:3001/api/seller/products/list/${user?.id}`)
       setProducts(res.data)
     } catch (err) {
       console.error(err)
@@ -33,7 +34,7 @@ export function SellerProductsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await axios.put(`http://localhost:3001/api/seller/products/${editingProduct.id}`, {
+      await api.put(`http://localhost:3001/api/seller/products/${editingProduct.id}`, {
         name: editingProduct.name,
         price: editingProduct.price,
         inventory: editingProduct.inventory,
@@ -101,7 +102,7 @@ export function SellerProductsPage() {
                       <div className="flex items-center gap-4">
                         <div className="w-14 h-14 rounded-xl bg-muted border border-border overflow-hidden flex-shrink-0 flex items-center justify-center">
                           {p.images?.[0] ? (
-                            <img src={p.images[0].url} alt={p.name} className="w-full h-full object-cover" />
+                            <img src={getProductImageUrl(p.images[0].url)} alt={p.name} className="w-full h-full object-cover" />
                           ) : (
                             <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
                           )}
@@ -115,7 +116,7 @@ export function SellerProductsPage() {
                     <td className="px-6 py-4">
                       <Badge variant="outline" className="bg-background text-xs">{p.category?.name || 'Uncategorized'}</Badge>
                     </td>
-                    <td className="px-6 py-4 font-semibold">₹{p.price.toLocaleString()}</td>
+                    <td className="px-6 py-4 font-semibold">{formatCurrency(p.price, p.currency)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${p.inventory > 5 ? 'bg-green-500' : p.inventory > 0 ? 'bg-amber-500' : 'bg-red-500'}`} />
@@ -162,7 +163,7 @@ export function SellerProductsPage() {
                 <div className="grid grid-cols-2 gap-5">
                   <Input 
                     type="number"
-                    label="Price (₹)" 
+                    label="Price" 
                     value={editingProduct.price} 
                     onChange={(e: any) => setEditingProduct({...editingProduct, price: e.target.value})} 
                     required

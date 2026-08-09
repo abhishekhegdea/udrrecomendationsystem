@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import recommendations
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from app.api import events, recommendations
 from app.database import SessionLocal
 from app.ml.collaborative import collaborative_model
 
@@ -21,6 +23,18 @@ app.add_middleware(
 
 # Include routers
 app.include_router(recommendations.router, prefix="/api/v1/recommendations", tags=["Recommendations"])
+app.include_router(events.router, prefix="/api/v1/events", tags=["Events"])
+
+# Telemetry is best-effort: if an event references a record that no longer
+# exists (e.g. a product or user deleted since the page loaded), the FK
+# violation would otherwise surface as an HTTP 500 — and an unhandled 500
+# bypasses the CORS middleware, so browsers report it as a CORS error.
+# Acknowledge the event instead so the ML API never crashes clients.
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    if "foreign key" in str(getattr(exc, "orig", "")).lower():
+        return JSONResponse(status_code=200, content={"skipped": True, "reason": "referenced_record_missing"})
+    return JSONResponse(status_code=500, content={"error": "database integrity error"})
 
 @app.on_event("startup")
 def startup_event():
@@ -28,6 +42,8 @@ def startup_event():
     try:
         print("Training Collaborative Filter on startup...")
         collaborative_model.train(db)
+    except Exception as exc:
+        print(f"Collaborative filter training skipped (non-fatal): {exc}")
     finally:
         db.close()
 
