@@ -72,6 +72,9 @@ class Seller(Base):
     rating = Column(Float, default=0)
     isNewSeller = Column(Boolean, default=True)
 
+    cityId = Column(String, nullable=True)
+    stateId = Column(String, nullable=True)
+
     # Cumulative cancellation penalty (negative score for recommendations)
     cancelPenalty = Column("cancelPenalty", Float, default=0)
 
@@ -112,6 +115,8 @@ class User(Base):
     firstName = Column(String)
     email = Column(String)
     role = Column(String)
+    cityId = Column(String, nullable=True)
+    stateId = Column(String, nullable=True)
 
 class Order(Base):
     __tablename__ = "Order"

@@ -95,8 +95,17 @@ export function ProductCard({ product }: { product: Product }) {
     }
   }
 
+  const handleProductClick = () => {
+    if (user) {
+      trackClick(user.id, product.id, {
+        source: 'product_card',
+        elementClicked: 'product_link'
+      })
+    }
+  }
+
   return (
-    <Link to={`/product/${product.id}`} className="group block w-full h-full relative overflow-hidden rounded-2xl bg-card border border-border shadow-sm hover:shadow-lg transition-all flex flex-col">
+    <Link onClick={handleProductClick} to={`/product/${product.id}`} className="group block w-full h-full relative overflow-hidden rounded-2xl bg-card border border-border shadow-sm hover:shadow-lg transition-all flex flex-col">
       {/* Image Container */}
       <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted border border-border">
         {safeImage ? (

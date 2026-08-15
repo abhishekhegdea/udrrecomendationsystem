@@ -84,6 +84,61 @@ router.put('/me', authMiddleware, async (req: any, res: any) => {
   }
 });
 
+router.put('/location', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { id, role } = req.user;
+    const { city, state } = req.body;
+    
+    if (!city || !state) {
+      return res.status(400).json({ error: 'City and State are required' });
+    }
+
+    // Try to find the exact state and city in the DB (case insensitive)
+    const dbState = await prisma.state.findFirst({
+      where: { name: { equals: state, mode: 'insensitive' } }
+    });
+
+    if (!dbState) {
+      return res.status(404).json({ error: `State '${state}' not found in database.` });
+    }
+
+    const dbCity = await prisma.city.findFirst({
+      where: { 
+        name: { equals: city, mode: 'insensitive' },
+        stateId: dbState.id 
+      }
+    });
+
+    if (!dbCity) {
+      return res.status(404).json({ error: `City '${city}' not found in database for state '${state}'.` });
+    }
+
+    if (role === 'DELIVERY') {
+      return res.json({ user: await prisma.deliveryPartner.findUnique({ where: { id } }) });
+    }
+    
+    if (role === 'SELLER') {
+      const seller = await prisma.seller.update({
+        where: { id },
+        data: { stateId: dbState.id, cityId: dbCity.id }
+      });
+      const { password: _, ...safeSeller } = seller;
+      return res.json({ user: { ...safeSeller, role: 'SELLER' }, message: `Location updated to ${dbCity.name}, ${dbState.name}` });
+    }
+    
+    // Default to User table (CUSTOMER / ADMIN)
+    const user = await prisma.user.update({
+      where: { id },
+      data: { stateId: dbState.id, cityId: dbCity.id }
+    });
+    const { password: _, ...safeUser } = user;
+    return res.json({ user: safeUser, message: `Location updated to ${dbCity.name}, ${dbState.name}` });
+  } catch (error) {
+    console.error('Update location error:', error);
+    res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
 router.post('/signup', async (req, res) => {
   try {
     const data = req.body;

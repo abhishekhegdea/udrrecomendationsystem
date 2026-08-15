@@ -11,6 +11,7 @@ import { ArrowRight, SlidersHorizontal, ChevronLeft, ChevronRight, Search, Trend
 import api, { isCancel } from '@/lib/api'
 import { useAbortSignal } from '@/hooks/useApiCall'
 import { getProductImageUrl } from '@/lib/utils'
+import { useGeolocation } from '@/hooks/useGeolocation'
 
 const ITEMS_PER_PAGE = 24
 const FETCH_TIMEOUT_MS = 5000
@@ -31,6 +32,7 @@ const categoryIcons: Record<string, React.ReactNode> = {
 
 export function HomePage() {
   const { user } = useAuth()
+  useGeolocation()
   const [products, setProducts] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
   const [loading, setLoading] = useState(true)

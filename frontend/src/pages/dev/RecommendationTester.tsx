@@ -153,6 +153,22 @@ export function RecommendationTester() {
               </div>
 
               <div>
+                <h3 className="font-semibold text-sm mb-2 text-primary uppercase">Clicks</h3>
+                {(!buyerHistory?.clicks || buyerHistory.clicks.length === 0) && <p className="text-xs text-muted-foreground">None</p>}
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  {buyerHistory?.clicks?.map((c: any, i: number) => (
+                    <li key={c.id ?? i}>
+                      {c.product?.name || 'Deleted product'}{' '}
+                      <span className="text-muted-foreground">({c.product?.category?.name || '—'})</span>{' '}
+                      <span className="text-xs text-muted-foreground">
+                        [{c.metadata?.element_clicked || c.metadata?.elementClicked || 'product_link'}]
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
                 <h3 className="font-semibold text-sm mb-2 text-primary uppercase">Cart Activity</h3>
                 {(!buyerHistory?.cart || buyerHistory.cart.length === 0) && <p className="text-xs text-muted-foreground">None</p>}
                 <ul className="list-disc pl-5 text-sm space-y-1">

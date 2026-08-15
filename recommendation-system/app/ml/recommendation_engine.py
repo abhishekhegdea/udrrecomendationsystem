@@ -748,25 +748,13 @@ class FeatureComputer:
         return min(boost, 0.50)  # cap at 0.5
 
     def _compute_location_boost(self, product: Product) -> float:
-        """
-        Boost products whose seller is located near the user.
-
-        Currently a placeholder that returns 0.0.  In a production
-        deployment, you would join to a ``Seller.location`` column and
-        compare it against ``self.config.user_location`` using a
-        pre-computed geographic distance or city/state match.
-
-        Future implementation sketch::
-
-            if product.seller and product.seller.location:
-                user_city = self.config.user_location.split(\",\")[0].strip()
-                seller_city = product.seller.location.split(\",\")[0].strip()
-                if user_city.lower() == seller_city.lower():
-                    return 0.15
-                # state-level match (weaker signal)
-                ...
-        """
-        return 0.0
+        boost = 0.0
+        if product.seller:
+            if self.config.user_city_id and getattr(product.seller, 'cityId', None) == self.config.user_city_id:
+                boost = 0.20
+            elif self.config.user_state_id and getattr(product.seller, 'stateId', None) == self.config.user_state_id:
+                boost = 0.10
+        return boost
 
     def _compute_rating_score(self, product: Product) -> float:
         """
