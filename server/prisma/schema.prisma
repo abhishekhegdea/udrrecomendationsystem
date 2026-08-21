@@ -33,6 +33,7 @@ model User {
   productViews     ProductView[]
   searchHistory    SearchHistory[]
   clickEvents      ClickEvent[]
+  clickRateHistory ProductClickHistory[]
   sessions         UserSession[]
   userBehaviours   UserBehaviour[]
   interests        CustomerInterest[]
@@ -196,6 +197,7 @@ model Product {
   reviews       Review[]
   views         ProductView[]
   clicks        ClickEvent[]
+  clickRateHistory ProductClickHistory[]
   userBehaviours UserBehaviour[]
 }
 
@@ -317,6 +319,23 @@ model ClickEvent {
   createdAt     DateTime  @default(now())
 }
 
+// Short-lived click history used by the recommendation click-rate feature.
+// Rows are retained for 7 days and removed by the Celery Beat cleanup task.
+model ProductClickHistory {
+  id             String   @id @default(uuid())
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  source         String?
+  elementClicked String?
+  createdAt      DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
 model SearchHistory {
   id            String    @id @default(uuid())
   userId        String?
@@ -404,6 +423,96 @@ model FairnessConfig {
   updatedAt           DateTime  @updatedAt             @map("updated_at")
 
   @@map("FairnessConfig")
+}
+
+
+
+// --- RECOMMENDATION SCORE AUDIT ---
+
+// One row per recommendation request. The detailed per-product scores are
+// stored in RecommendationScoreSnapshot rows linked through runId.
+model RecommendationRun {
+  id               String   @id @default(uuid())
+  userId           String
+  context          String   @default("home")
+  algorithmVersion String   @default("personalized-click-v2")
+  totalReturned    Int      @default(0)
+  executionTimeMs  Float    @default(0)
+  weights          Json
+  createdAt        DateTime @default(now())
+
+  snapshots RecommendationScoreSnapshot[]
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// Complete auditable score breakdown for one product in one recommendation
+// run. Score/contribution fields are stored as decimals in the 0..1 scale.
+model RecommendationScoreSnapshot {
+  id      String @id @default(uuid())
+  runId   String
+  run     RecommendationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  userId      String
+  productId   String
+  productName String?
+  rank        Int
+  source      String?
+
+  // Raw recommendation feature scores
+  contentScore                Float @default(0)
+  collaborativeScore          Float @default(0)
+  trendingScore               Float @default(0)
+  seasonalScore               Float @default(0)
+  locationScore               Float @default(0)
+  categoryAffinityScore       Float @default(0)
+  brandAffinityScore          Float @default(0)
+  ratingScore                 Float @default(0)
+  sellerFreshnessScore        Float @default(0)
+  productClickPopularityScore Float @default(0)
+  userClickAffinityScore      Float @default(0)
+  engagementScore             Float @default(0)
+
+  // Click diagnostics
+  productClicks7d      Int   @default(0)
+  productClicksPerDay Float @default(0)
+
+  // Internal user-click-affinity components
+  semanticSimilarityScore    Float @default(0)
+  clickCategoryScore         Float @default(0)
+  clickBrandScore            Float @default(0)
+  clickFrequencyRecencyScore Float @default(0)
+  matchedClickedProductId    String?
+  matchedClickedProductName  String?
+
+  // Weighted contributions to the model score
+  contentContribution                Float @default(0)
+  collaborativeContribution          Float @default(0)
+  trendingContribution               Float @default(0)
+  seasonalContribution               Float @default(0)
+  locationContribution               Float @default(0)
+  categoryAffinityContribution       Float @default(0)
+  brandAffinityContribution          Float @default(0)
+  ratingContribution                 Float @default(0)
+  sellerFreshnessContribution        Float @default(0)
+  productClickPopularityContribution Float @default(0)
+  userClickAffinityContribution      Float @default(0)
+  engagementContribution             Float @default(0)
+
+  // Final score trace
+  weightedScoreBeforeRules Float @default(0)
+  businessRuleAdjustment   Float @default(0)
+  finalScore               Float @default(0)
+
+  explanation String?
+  createdAt   DateTime @default(now())
+
+  @@index([runId, rank])
+  @@index([userId, createdAt])
+  @@index([productId, createdAt])
+  @@index([finalScore])
+  @@index([createdAt])
 }
 
 // --- LOCATION DATA ---

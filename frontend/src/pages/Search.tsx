@@ -1,268 +1,1548 @@
-import { useEffect, useRef, useState } from 'react'
-import { useSearchParams, useParams, Link } from 'react-router-dom'
-import { ProductCard } from '@/components/ui/ProductCard'
-import { ProductGridSkeleton } from '@/components/ui/ProductSkeleton'
-import { BackToTop } from '@/components/ui/BackToTop'
-import { Filter, SlidersHorizontal } from 'lucide-react'
-import api, { isCancel } from '@/lib/api'
-import { useAbortSignal } from '@/hooks/useApiCall'
-import { getProductImageUrl } from '@/lib/utils'
-import { useAuth } from '@/contexts/AuthContext'
-import { trackSearch } from '@/lib/track'
+import {
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
-export function SearchPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const { categoryId: routeCategoryId } = useParams()
-  const { user } = useAuth()
-  const lastTrackedQuery = useRef('')
-  
-  const query = searchParams.get('q') || ''
-  const categoryId = routeCategoryId || searchParams.get('categoryId') || ''
-  const minPriceParam = searchParams.get('minPrice') || ''
-  const maxPriceParam = searchParams.get('maxPrice') || ''
-  const minRatingParam = searchParams.get('minRating') || ''
-  const sortParam = searchParams.get('sort') || 'newest'
-  
-  const [products, setProducts] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [categories, setCategories] = useState<any[]>([])
+import {
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
 
-  const [minPrice, setMinPrice] = useState(minPriceParam)
-  const [maxPrice, setMaxPrice] = useState(maxPriceParam)
-  const [minRating, setMinRating] = useState(minRatingParam)
-  const [sort, setSort] = useState(sortParam)
+import {
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  SlidersHorizontal,
+} from 'lucide-react'
 
-  const applyFilters = () => {
-    const params: any = {}
-    if (query) params.q = query
-    if (categoryId) params.categoryId = categoryId
-    if (minPrice) params.minPrice = minPrice
-    if (maxPrice) params.maxPrice = maxPrice
-    if (minRating) params.minRating = minRating
-    if (sort) params.sort = sort
-    setSearchParams(params)
+import api, {
+  isCancel,
+} from '@/lib/api'
+
+import {
+  ProductCard,
+} from '@/components/ui/ProductCard'
+
+import {
+  ProductGridSkeleton,
+} from '@/components/ui/ProductSkeleton'
+
+import {
+  BackToTop,
+} from '@/components/ui/BackToTop'
+
+import {
+  getProductImageUrl,
+} from '@/lib/utils'
+
+import {
+  uniqueById,
+} from '@/lib/dedupe'
+
+import {
+  useAuth,
+} from '@/contexts/AuthContext'
+
+import {
+  trackSearch,
+} from '@/lib/track'
+
+
+const ITEMS_PER_PAGE = 24
+
+const API_BASE =
+  'http://localhost:3001'
+
+
+interface Category {
+  id: string
+  name: string
+}
+
+
+interface ProductImage {
+  id?: string
+  url?: string
+}
+
+
+interface Seller {
+  id?: string
+  businessName?: string | null
+  firstName?: string | null
+  isNewSeller?: boolean
+}
+
+
+interface ApiProduct {
+  id: string
+  name: string
+  price: number
+
+  currency?: string
+
+  averageRating?: number
+  reviewsCount?: number
+
+  brand?: string | null
+
+  description?: string
+
+  materials?: string[]
+
+  category?: {
+    id?: string
+    name?: string
+  } | null
+
+  seller?: Seller | null
+
+  images?: ProductImage[]
+}
+
+
+interface ProductsResponse {
+  data?: ApiProduct[]
+
+  meta?: {
+    total?: number
+    page?: number
+    limit?: number
+    totalPages?: number
+  }
+}
+
+
+function getValidPage(
+  value: string | null
+): number {
+  const parsed =
+    Number.parseInt(
+      value || '1',
+      10
+    )
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < 1
+  ) {
+    return 1
   }
 
-  const { getSignal: getCatSignal, mountedRef: catMounted } = useAbortSignal()
+  return parsed
+}
 
-  // Fetch Categories for Sidebar
+
+export function SearchPage() {
+  const [
+    searchParams,
+  ] =
+    useSearchParams()
+
+  const {
+    categoryId:
+      routeCategoryId,
+  } =
+    useParams()
+
+  const navigate =
+    useNavigate()
+
+  const {
+    user,
+  } =
+    useAuth()
+
+
+  /**
+   * ---------------------------------------------------------
+   * URL VALUES
+   * ---------------------------------------------------------
+   */
+
+  const query =
+    searchParams.get('q') ||
+    ''
+
+  const categoryParam =
+    searchParams.get(
+      'categoryId'
+    ) || ''
+
+  const minPriceParam =
+    searchParams.get(
+      'minPrice'
+    ) || ''
+
+  const maxPriceParam =
+    searchParams.get(
+      'maxPrice'
+    ) || ''
+
+  const minRatingParam =
+    searchParams.get(
+      'minRating'
+    ) || ''
+
+  const sortParam =
+    searchParams.get(
+      'sort'
+    ) || 'newest'
+
+  const page =
+    getValidPage(
+      searchParams.get(
+        'page'
+      )
+    )
+
+
+  /**
+   * ---------------------------------------------------------
+   * DATA STATE
+   * ---------------------------------------------------------
+   */
+
+  const [
+    products,
+    setProducts,
+  ] =
+    useState<ApiProduct[]>(
+      []
+    )
+
+  const [
+    categories,
+    setCategories,
+  ] =
+    useState<Category[]>(
+      []
+    )
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true)
+
+  const [
+    fetchError,
+    setFetchError,
+  ] =
+    useState(false)
+
+  const [
+    totalProducts,
+    setTotalProducts,
+  ] =
+    useState(0)
+
+  const [
+    totalPages,
+    setTotalPages,
+  ] =
+    useState(1)
+
+
+  /**
+   * ---------------------------------------------------------
+   * FILTER FORM STATE
+   * ---------------------------------------------------------
+   */
+
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] =
+    useState(
+      categoryParam
+    )
+
+  const [
+    minPrice,
+    setMinPrice,
+  ] =
+    useState(
+      minPriceParam
+    )
+
+  const [
+    maxPrice,
+    setMaxPrice,
+  ] =
+    useState(
+      maxPriceParam
+    )
+
+  const [
+    minRating,
+    setMinRating,
+  ] =
+    useState(
+      minRatingParam
+    )
+
+
+  const lastTrackedQuery =
+    useRef('')
+
+
+  /**
+   * ---------------------------------------------------------
+   * SYNC FORM WITH URL
+   * ---------------------------------------------------------
+   */
+
   useEffect(() => {
-    api.get('http://localhost:3001/api/products/categories/all', { signal: getCatSignal() })
-      .then(res => { if (catMounted.current) setCategories(res.data) })
-      .catch(err => { if (!isCancel(err)) console.error('Failed to load categories', err) })
-    return () => getCatSignal()
-  }, [])
+    setMinPrice(
+      minPriceParam
+    )
 
-  const { getSignal: getSearchSignal, mountedRef: searchMounted } = useAbortSignal()
+    setMaxPrice(
+      maxPriceParam
+    )
 
-  // Fetch Search Results
+    setMinRating(
+      minRatingParam
+    )
+
+    if (!routeCategoryId) {
+      setSelectedCategory(
+        categoryParam
+      )
+    }
+  }, [
+    categoryParam,
+    minPriceParam,
+    maxPriceParam,
+    minRatingParam,
+    routeCategoryId,
+  ])
+
+
+  /**
+   * ---------------------------------------------------------
+   * LOAD CATEGORIES
+   * ---------------------------------------------------------
+   */
+
   useEffect(() => {
-    const fetchResults = async () => {
-      setLoading(true)
-      try {
-        const params: any = { q: query }
-        if (routeCategoryId) {
-          params.categoryName = routeCategoryId
-        } else if (categoryId) {
-          params.categoryId = categoryId
+    const controller =
+      new AbortController()
+
+    const loadCategories =
+      async () => {
+        try {
+          const response =
+            await api.get<
+              Category[]
+            >(
+              `${API_BASE}/api/products/categories/all`,
+              {
+                signal:
+                  controller.signal,
+
+                timeout:
+                  5000,
+              }
+            )
+
+          if (
+            controller.signal
+              .aborted
+          ) {
+            return
+          }
+
+          const rawCategories =
+            Array.isArray(
+              response.data
+            )
+              ? response.data
+              : []
+
+          /**
+           * Categories should also have unique React keys.
+           */
+          const uniqueCategories =
+            uniqueById(
+              rawCategories.filter(
+                (
+                  category
+                ): category is Category =>
+                  Boolean(
+                    category &&
+                    typeof category.id ===
+                      'string' &&
+                    typeof category.name ===
+                      'string'
+                  )
+              )
+            )
+
+          setCategories(
+            uniqueCategories
+          )
+
+
+          /**
+           * Navbar category URLs may provide the category
+           * name rather than its database UUID.
+           *
+           * Example:
+           *
+           * /search/category/Furniture
+           */
+          if (
+            routeCategoryId
+          ) {
+            const matchedCategory =
+              uniqueCategories.find(
+                (category) =>
+                  category.id ===
+                    routeCategoryId ||
+                  category.name.toLowerCase() ===
+                    routeCategoryId.toLowerCase()
+              )
+
+            if (
+              matchedCategory
+            ) {
+              setSelectedCategory(
+                matchedCategory.id
+              )
+            }
+          }
+        } catch (error) {
+          if (
+            controller.signal
+              .aborted ||
+            isCancel(error)
+          ) {
+            return
+          }
+
+          console.error(
+            'Failed to load categories:',
+            error
+          )
+
+          setCategories([])
         }
-        if (minPriceParam) params.minPrice = minPriceParam
-        if (maxPriceParam) params.maxPrice = maxPriceParam
-        if (minRatingParam) params.minRating = minRatingParam
-        if (sortParam) params.sort = sortParam
+      }
 
-        const res = await api.get(`http://localhost:3001/api/products`, { params, signal: getSearchSignal() })
-        if (searchMounted.current) {
-          setProducts(res.data.data)
-          // Fire a SEARCH event (once per distinct query) so the
-          // recommendation engine can learn search affinity.
-          const q = query.trim()
-          if (user && q && lastTrackedQuery.current !== q) {
-            lastTrackedQuery.current = q
-            trackSearch(user.id, q, {
-              resultCount: res.data?.data?.length ?? 0,
-              source: 'search_page',
-            })
-          } else if (!q) {
-            // Reset so a repeat of the same query later counts again
-            lastTrackedQuery.current = ''
+    loadCategories()
+
+    return () => {
+      controller.abort()
+    }
+  }, [
+    routeCategoryId,
+  ])
+
+
+  /**
+   * ---------------------------------------------------------
+   * LOAD PRODUCTS
+   * ---------------------------------------------------------
+   */
+
+  useEffect(() => {
+    const controller =
+      new AbortController()
+
+    const loadProducts =
+      async () => {
+        setLoading(true)
+
+        setFetchError(
+          false
+        )
+
+        try {
+          const params:
+            Record<
+              string,
+              string | number
+            > = {
+              page,
+              limit:
+                ITEMS_PER_PAGE,
+              sort:
+                sortParam,
+            }
+
+
+          /**
+           * Search query.
+           */
+          if (
+            query.trim()
+          ) {
+            params.q =
+              query.trim()
+          }
+
+
+          /**
+           * Category supplied by a route.
+           *
+           * Existing application routing may use category
+           * names such as Furniture.
+           */
+          if (
+            routeCategoryId
+          ) {
+            params.categoryName =
+              routeCategoryId
+          } else if (
+            categoryParam
+          ) {
+            params.categoryId =
+              categoryParam
+          }
+
+
+          if (
+            minPriceParam
+          ) {
+            params.minPrice =
+              minPriceParam
+          }
+
+
+          if (
+            maxPriceParam
+          ) {
+            params.maxPrice =
+              maxPriceParam
+          }
+
+
+          if (
+            minRatingParam
+          ) {
+            params.minRating =
+              minRatingParam
+          }
+
+
+          const response =
+            await api.get<
+              ProductsResponse
+            >(
+              `${API_BASE}/api/products`,
+              {
+                params,
+
+                signal:
+                  controller.signal,
+
+                timeout:
+                  10000,
+              }
+            )
+
+
+          if (
+            controller.signal
+              .aborted
+          ) {
+            return
+          }
+
+
+          /**
+           * -------------------------------------------------
+           * IMPORTANT DUPLICATE FIX
+           * -------------------------------------------------
+           *
+           * Never pass duplicate product IDs into React.
+           */
+
+          const rawProducts =
+            Array.isArray(
+              response.data
+                ?.data
+            )
+              ? response.data
+                  .data
+              : []
+
+
+          const validProducts =
+            rawProducts.filter(
+              (
+                product
+              ): product is ApiProduct =>
+                Boolean(
+                  product &&
+                  typeof product.id ===
+                    'string' &&
+                  product.id
+                    .trim()
+                    .length >
+                    0 &&
+                  typeof product.name ===
+                    'string'
+                )
+            )
+
+
+          const uniqueProducts =
+            uniqueById(
+              validProducts
+            )
+
+
+          setProducts(
+            uniqueProducts
+          )
+
+
+          const apiTotal =
+            Number(
+              response.data
+                ?.meta?.total
+            )
+
+
+          setTotalProducts(
+            Number.isFinite(
+              apiTotal
+            )
+              ? apiTotal
+              : uniqueProducts.length
+          )
+
+
+          const apiTotalPages =
+            Number(
+              response.data
+                ?.meta
+                ?.totalPages
+            )
+
+
+          setTotalPages(
+            Number.isFinite(
+              apiTotalPages
+            ) &&
+              apiTotalPages >
+                0
+              ? apiTotalPages
+              : 1
+          )
+
+
+          /**
+           * -------------------------------------------------
+           * SEARCH TRACKING
+           * -------------------------------------------------
+           */
+
+          const trimmedQuery =
+            query.trim()
+
+
+          if (
+            user &&
+            trimmedQuery &&
+            lastTrackedQuery
+              .current !==
+              trimmedQuery
+          ) {
+            lastTrackedQuery.current =
+              trimmedQuery
+
+            trackSearch(
+              user.id,
+              trimmedQuery,
+              {
+                resultCount:
+                  uniqueProducts.length,
+
+                source:
+                  'search_page',
+              }
+            )
+          } else if (
+            !trimmedQuery
+          ) {
+            lastTrackedQuery.current =
+              ''
+          }
+        } catch (error) {
+          if (
+            controller.signal
+              .aborted ||
+            isCancel(error)
+          ) {
+            return
+          }
+
+
+          console.error(
+            'Failed to fetch products:',
+            error
+          )
+
+
+          setProducts([])
+
+          setTotalProducts(
+            0
+          )
+
+          setTotalPages(
+            1
+          )
+
+          setFetchError(
+            true
+          )
+        } finally {
+          if (
+            !controller.signal
+              .aborted
+          ) {
+            setLoading(false)
           }
         }
-      } catch (err) {
-        if (!isCancel(err) && searchMounted.current) {
-          console.error('Failed to fetch search results', err)
-        }
-      } finally {
-        if (searchMounted.current) setLoading(false)
       }
+
+
+    loadProducts()
+
+
+    return () => {
+      controller.abort()
     }
-    fetchResults()
-    return () => getSearchSignal()
-  }, [query, categoryId, routeCategoryId, minPriceParam, maxPriceParam, minRatingParam, sortParam])
+  }, [
+    query,
+    routeCategoryId,
+    categoryParam,
+    minPriceParam,
+    maxPriceParam,
+    minRatingParam,
+    sortParam,
+    page,
+    user,
+  ])
+
+
+  /**
+   * ---------------------------------------------------------
+   * BUILD URL
+   * ---------------------------------------------------------
+   */
+
+  const updateSearch =
+    (
+      overrides: Record<
+        string,
+        string | undefined
+      >
+    ) => {
+      const params =
+        new URLSearchParams()
+
+      if (query.trim()) {
+        params.set(
+          'q',
+          query.trim()
+        )
+      }
+
+
+      const nextCategory =
+        overrides.categoryId !==
+        undefined
+          ? overrides.categoryId
+          : selectedCategory
+
+
+      const nextMinPrice =
+        overrides.minPrice !==
+        undefined
+          ? overrides.minPrice
+          : minPrice
+
+
+      const nextMaxPrice =
+        overrides.maxPrice !==
+        undefined
+          ? overrides.maxPrice
+          : maxPrice
+
+
+      const nextMinRating =
+        overrides.minRating !==
+        undefined
+          ? overrides.minRating
+          : minRating
+
+
+      const nextSort =
+        overrides.sort !==
+        undefined
+          ? overrides.sort
+          : sortParam
+
+
+      const nextPage =
+        overrides.page !==
+        undefined
+          ? overrides.page
+          : '1'
+
+
+      if (
+        nextCategory
+      ) {
+        params.set(
+          'categoryId',
+          nextCategory
+        )
+      }
+
+
+      if (
+        nextMinPrice
+      ) {
+        params.set(
+          'minPrice',
+          nextMinPrice
+        )
+      }
+
+
+      if (
+        nextMaxPrice
+      ) {
+        params.set(
+          'maxPrice',
+          nextMaxPrice
+        )
+      }
+
+
+      if (
+        nextMinRating
+      ) {
+        params.set(
+          'minRating',
+          nextMinRating
+        )
+      }
+
+
+      if (
+        nextSort &&
+        nextSort !==
+          'newest'
+      ) {
+        params.set(
+          'sort',
+          nextSort
+        )
+      }
+
+
+      if (
+        nextPage &&
+        nextPage !==
+          '1'
+      ) {
+        params.set(
+          'page',
+          nextPage
+        )
+      }
+
+
+      const queryString =
+        params.toString()
+
+
+      /**
+       * Navigate to /search instead of retaining a category
+       * route such as /search/category/Furniture.
+       */
+      navigate(
+        queryString
+          ? `/search?${queryString}`
+          : '/search'
+      )
+    }
+
+
+  /**
+   * ---------------------------------------------------------
+   * APPLY FILTERS
+   * ---------------------------------------------------------
+   */
+
+  const applyFilters =
+    () => {
+      updateSearch({
+        categoryId:
+          selectedCategory,
+
+        minPrice,
+
+        maxPrice,
+
+        minRating,
+
+        page:
+          '1',
+      })
+    }
+
+
+  /**
+   * ---------------------------------------------------------
+   * CLEAR FILTERS
+   * ---------------------------------------------------------
+   */
+
+  const clearFilters =
+    () => {
+      setSelectedCategory(
+        ''
+      )
+
+      setMinPrice(
+        ''
+      )
+
+      setMaxPrice(
+        ''
+      )
+
+      setMinRating(
+        ''
+      )
+
+
+      const params =
+        new URLSearchParams()
+
+
+      if (
+        query.trim()
+      ) {
+        params.set(
+          'q',
+          query.trim()
+        )
+      }
+
+
+      navigate(
+        params.toString()
+          ? `/search?${params.toString()}`
+          : '/search'
+      )
+    }
+
+
+  /**
+   * ---------------------------------------------------------
+   * SORT
+   * ---------------------------------------------------------
+   */
+
+  const handleSortChange =
+    (
+      newSort: string
+    ) => {
+      updateSearch({
+        sort:
+          newSort,
+
+        page:
+          '1',
+      })
+    }
+
+
+  /**
+   * ---------------------------------------------------------
+   * PAGINATION
+   * ---------------------------------------------------------
+   */
+
+  const goToPage =
+    (
+      nextPage: number
+    ) => {
+      if (
+        nextPage < 1 ||
+        nextPage >
+          totalPages
+      ) {
+        return
+      }
+
+
+      updateSearch({
+        page:
+          String(
+            nextPage
+          ),
+      })
+
+
+      window.scrollTo({
+        top: 0,
+        behavior:
+          'smooth',
+      })
+    }
+
 
   return (
     <>
-    <div className="container mx-auto px-4 py-8 max-w-7xl flex flex-col md:flex-row gap-8">
-      {/* Sidebar Filters */}
-      <aside className="w-full md:w-64 flex-shrink-0">
-        <div className="sticky top-28 bg-card border border-border rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-6 text-foreground">
-            <SlidersHorizontal className="h-5 w-5" />
-            <h2 className="font-bold text-lg">Filters</h2>
-          </div>
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="flex flex-col lg:flex-row gap-8">
 
-          <div className="mb-6">
-            <h3 className="font-semibold text-sm mb-3 text-muted-foreground uppercase tracking-wider">Categories</h3>
-            <div className="space-y-2">
-              <button 
-                onClick={() => setSearchParams({ q: query })}
-                className={`block text-left w-full text-sm hover:text-primary transition-colors ${!categoryId ? 'font-bold text-primary' : 'text-foreground'}`}
+          {/* =================================================
+              FILTER SIDEBAR
+          ================================================= */}
+
+          <aside className="w-full lg:w-60 flex-shrink-0">
+
+            <div className="bg-card border border-border rounded-3xl p-5 shadow-sm">
+
+              <div className="flex items-center gap-2 mb-6">
+
+                <SlidersHorizontal className="h-5 w-5" />
+
+                <h2 className="font-bold text-lg">
+                  Filters
+                </h2>
+
+              </div>
+
+
+              {/* CATEGORY */}
+
+              <div className="mb-6">
+
+                <label
+                  htmlFor="category-filter"
+                  className="block text-sm font-semibold mb-2"
+                >
+                  Category
+                </label>
+
+                <select
+                  id="category-filter"
+                  value={
+                    selectedCategory
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setSelectedCategory(
+                      event.target
+                        .value
+                    )
+                  }
+                  className="w-full h-11 rounded-full border border-border bg-muted/50 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                >
+                  <option value="">
+                    All Categories
+                  </option>
+
+                  {categories.map(
+                    (
+                      category
+                    ) => (
+                      <option
+                        key={
+                          category.id
+                        }
+                        value={
+                          category.id
+                        }
+                      >
+                        {
+                          category.name
+                        }
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+
+              {/* MIN PRICE */}
+
+              <div className="mb-6">
+
+                <label
+                  htmlFor="min-price-filter"
+                  className="block text-sm font-semibold mb-2"
+                >
+                  Minimum Price
+                </label>
+
+                <input
+                  id="min-price-filter"
+                  type="number"
+                  min="0"
+                  value={
+                    minPrice
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMinPrice(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="₹0"
+                  className="w-full h-11 rounded-full border border-border bg-muted/50 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+
+              </div>
+
+
+              {/* MAX PRICE */}
+
+              <div className="mb-6">
+
+                <label
+                  htmlFor="max-price-filter"
+                  className="block text-sm font-semibold mb-2"
+                >
+                  Maximum Price
+                </label>
+
+                <input
+                  id="max-price-filter"
+                  type="number"
+                  min="0"
+                  value={
+                    maxPrice
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMaxPrice(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="No maximum"
+                  className="w-full h-11 rounded-full border border-border bg-muted/50 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+
+              </div>
+
+
+              {/* RATING */}
+
+              <div className="mb-5">
+
+                <label
+                  htmlFor="rating-filter"
+                  className="block text-sm font-semibold mb-2"
+                >
+                  Minimum Rating
+                </label>
+
+                <select
+                  id="rating-filter"
+                  value={
+                    minRating
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMinRating(
+                      event.target
+                        .value
+                    )
+                  }
+                  className="w-full h-11 rounded-full border border-border bg-muted/50 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                >
+
+                  <option value="">
+                    Any Rating
+                  </option>
+
+                  <option value="4">
+                    4★ & up
+                  </option>
+
+                  <option value="3">
+                    3★ & up
+                  </option>
+
+                  <option value="2">
+                    2★ & up
+                  </option>
+
+                  <option value="1">
+                    1★ & up
+                  </option>
+
+                </select>
+
+              </div>
+
+
+              {/* APPLY */}
+
+              <button
+                type="button"
+                onClick={
+                  applyFilters
+                }
+                className="w-full h-11 bg-primary text-primary-foreground rounded-full text-sm font-semibold hover:bg-primary/90 transition-colors"
               >
-                All Categories
+                Apply Filters
               </button>
-              {categories.map(cat => (
+
+
+              {/* CLEAR */}
+
+              <button
+                type="button"
+                onClick={
+                  clearFilters
+                }
+                className="w-full mt-4 text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                Clear Filters
+              </button>
+
+            </div>
+
+          </aside>
+
+
+          {/* =================================================
+              PRODUCTS
+          ================================================= */}
+
+          <main className="flex-1 min-w-0">
+
+            {/* HEADER */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-7">
+
+              <div>
+
+                <h1 className="text-3xl font-display font-bold text-foreground">
+
+                  {query
+                    ? `Search results for "${query}"`
+                    : 'Browse Products'}
+
+                </h1>
+
+                <p className="text-sm text-muted-foreground mt-1">
+
+                  {loading
+                    ? 'Loading products...'
+                    : `${totalProducts.toLocaleString()} products found`}
+
+                </p>
+
+              </div>
+
+
+              <select
+                value={
+                  sortParam
+                }
+                onChange={(
+                  event
+                ) =>
+                  handleSortChange(
+                    event.target
+                      .value
+                  )
+                }
+                className="h-11 min-w-40 rounded-full border border-border bg-muted/50 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              >
+
+                <option value="newest">
+                  Newest First
+                </option>
+
+                <option value="popular">
+                  Most Popular
+                </option>
+
+                <option value="rating">
+                  Highest Rated
+                </option>
+
+                <option value="price_asc">
+                  Price: Low to High
+                </option>
+
+                <option value="price_desc">
+                  Price: High to Low
+                </option>
+
+              </select>
+
+            </div>
+
+
+            {/* LOADING */}
+
+            {loading ? (
+
+              <ProductGridSkeleton
+                count={12}
+              />
+
+            ) : fetchError ? (
+
+              /* ERROR STATE */
+
+              <div className="min-h-[280px] flex flex-col items-center justify-center text-center bg-muted/20 border border-border rounded-3xl px-6">
+
+                <div className="text-5xl mb-4">
+                  ⚠️
+                </div>
+
+                <h3 className="text-xl font-bold mb-2">
+                  Could not load products
+                </h3>
+
+                <p className="text-muted-foreground mb-6">
+                  The product service could not be reached.
+                </p>
+
                 <button
-                  key={cat.id}
-                  onClick={() => setSearchParams({ q: query, categoryId: cat.id })}
-                  className={`block text-left w-full text-sm hover:text-primary transition-colors ${categoryId === cat.id ? 'font-bold text-primary' : 'text-foreground'}`}
+                  type="button"
+                  onClick={() =>
+                    window.location.reload()
+                  }
+                  className="px-6 py-2.5 bg-primary text-primary-foreground rounded-full font-semibold hover:bg-primary/90"
                 >
-                  {cat.name}
+                  Retry
                 </button>
-              ))}
-            </div>
-          </div>
 
-          <div className="mb-6">
-            <h3 className="font-semibold text-sm mb-3 text-muted-foreground uppercase tracking-wider">Price Range</h3>
-            <div className="flex items-center gap-2 mb-3">
-              <input 
-                type="number" 
-                placeholder="Min" 
-                value={minPrice}
-                onChange={e => setMinPrice(e.target.value)}
-                className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" 
-              />
-              <span className="text-muted-foreground">-</span>
-              <input 
-                type="number" 
-                placeholder="Max" 
-                value={maxPrice}
-                onChange={e => setMaxPrice(e.target.value)}
-                className="w-full h-10 bg-muted border border-border rounded-lg px-3 text-sm focus:ring-1 focus:ring-primary outline-none" 
-              />
-            </div>
-          </div>
+              </div>
 
-          <div className="mb-6">
-            <h3 className="font-semibold text-sm mb-3 text-muted-foreground uppercase tracking-wider">Minimum Rating</h3>
-            <div className="space-y-2">
-              {[4, 3, 2, 1].map(star => (
+            ) : products.length ===
+              0 ? (
+
+              /* EMPTY STATE */
+
+              <div className="min-h-[280px] flex flex-col items-center justify-center text-center bg-muted/20 border border-border rounded-3xl px-6">
+
+                <Filter className="h-12 w-12 text-muted-foreground mb-4" />
+
+                <h3 className="text-xl font-bold text-foreground mb-2">
+                  No products found
+                </h3>
+
+                <p className="text-muted-foreground mb-6">
+                  Try adjusting your search or filters.
+                </p>
+
                 <button
-                  key={star}
-                  onClick={() => {
-                    setMinRating(minRating === String(star) ? '' : String(star));
-                    const params: any = { q: query };
-                    if (categoryId) params.categoryId = categoryId;
-                    if (minPrice) params.minPrice = minPrice;
-                    if (maxPrice) params.maxPrice = maxPrice;
-                    if (minRating === String(star)) {
-                      setSearchParams(params);
-                    } else {
-                      setSearchParams({ ...params, minRating: String(star) });
+                  type="button"
+                  onClick={
+                    clearFilters
+                  }
+                  className="px-6 py-2.5 bg-primary text-primary-foreground rounded-full font-semibold hover:bg-primary/90 transition-colors"
+                >
+                  Clear Filters
+                </button>
+
+              </div>
+
+            ) : (
+
+              <>
+                {/* PRODUCT GRID */}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+
+                  {products.map(
+                    (
+                      product
+                    ) => {
+
+                      const cardProduct = {
+                        id:
+                          product.id,
+
+                        name:
+                          product.name,
+
+                        price:
+                          Number(
+                            product.price
+                          ) || 0,
+
+                        currency:
+                          product.currency ||
+                          'INR',
+
+                        averageRating:
+                          product.averageRating,
+
+                        reviewsCount:
+                          product.reviewsCount,
+
+                        brand:
+                          product.brand ||
+                          undefined,
+
+                        seller_name:
+                          product.seller
+                            ?.businessName ||
+                          product.seller
+                            ?.firstName ||
+                          undefined,
+
+                        seller_new:
+                          Boolean(
+                            product.seller
+                              ?.isNewSeller
+                          ),
+
+                        image:
+                          getProductImageUrl(
+                            product.images?.[0]
+                              ?.url
+                          ),
+
+                        description:
+                          product.description,
+
+                        materials:
+                          Array.isArray(
+                            product.materials
+                          )
+                            ? product.materials
+                            : undefined,
+
+                        categoryName:
+                          product.category
+                            ?.name,
+                      }
+
+
+                      /**
+                       * product.id is now guaranteed to be
+                       * unique because uniqueById() ran
+                       * before setProducts().
+                       */
+                      return (
+                        <ProductCard
+                          key={
+                            product.id
+                          }
+                          product={
+                            cardProduct
+                          }
+                        />
+                      )
                     }
-                  }}
-                  className={`block w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${minRating === String(star) ? 'bg-primary/10 text-primary font-bold' : 'text-foreground hover:bg-muted'}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span>{'★'.repeat(star)}{'☆'.repeat(4 - star)}</span>
-                    <span className="text-muted-foreground">& up</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+                  )}
 
-          <button 
-            onClick={applyFilters}
-            className="w-full py-2 bg-primary/10 text-primary font-semibold rounded-lg hover:bg-primary hover:text-primary-foreground transition-colors text-sm"
-          >
-            Apply Filters
-          </button>
+                </div>
+
+
+                {/* PAGINATION */}
+
+                {totalPages > 1 && (
+
+                  <div className="flex items-center justify-center gap-3 mt-10">
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        goToPage(
+                          page - 1
+                        )
+                      }
+                      disabled={
+                        page <= 1
+                      }
+                      className="h-10 px-4 rounded-xl border border-border flex items-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted"
+                    >
+
+                      <ChevronLeft className="h-4 w-4" />
+
+                      Previous
+
+                    </button>
+
+
+                    <span className="text-sm text-muted-foreground">
+
+                      Page{' '}
+
+                      <strong className="text-foreground">
+                        {page}
+                      </strong>
+
+                      {' '}of{' '}
+
+                      <strong className="text-foreground">
+                        {
+                          totalPages
+                        }
+                      </strong>
+
+                    </span>
+
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        goToPage(
+                          page + 1
+                        )
+                      }
+                      disabled={
+                        page >=
+                        totalPages
+                      }
+                      className="h-10 px-4 rounded-xl border border-border flex items-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted"
+                    >
+
+                      Next
+
+                      <ChevronRight className="h-4 w-4" />
+
+                    </button>
+
+                  </div>
+
+                )}
+
+              </>
+
+            )}
+
+          </main>
+
         </div>
-      </aside>
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-1">
-        <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-display font-bold text-foreground mb-2">
-              {query ? `Search results for "${query}"` : 'All Products'}
-            </h1>
-            <p className="text-muted-foreground">Showing {products.length} products</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground font-medium">Sort by:</span>
-            <select
-              value={sort}
-              onChange={(e) => {
-                setSort(e.target.value)
-                setSearchParams(prev => {
-                  const params = new URLSearchParams(prev)
-                  params.set('sort', e.target.value)
-                  return params
-                })
-              }}
-              className="h-10 px-4 bg-muted border border-border rounded-xl text-sm font-medium text-foreground outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-            >
-              <option value="newest">Newest First</option>
-              <option value="popular">Most Popular</option>
-              <option value="rating">Highest Rated</option>
-              <option value="price_asc">Price: Low to High</option>
-              <option value="price_desc">Price: High to Low</option>
-            </select>
-          </div>
-        </div>
 
-        {loading ? (
-          <div className="py-4">
-            <ProductGridSkeleton count={12} />
-          </div>
-        ) : products.length === 0 ? (
-          <div className="text-center py-20 bg-muted/50 rounded-3xl border border-border">
-            <Filter className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-foreground mb-2">No products found</h3>
-            <p className="text-muted-foreground mb-6">Try adjusting your search or filters.</p>
-            <button 
-              onClick={() => setSearchParams({})}
-              className="px-6 py-2 bg-primary text-primary-foreground font-semibold rounded-full hover:bg-primary/90 transition-colors"
-            >
-              Clear Filters
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product) => {
-              // Map DB product to Card format
-              const cardProduct = {
-                id: product.id,
-                name: product.name,
-                price: product.price,
-                currency: product.currency,
-                averageRating: product.averageRating,
-                reviewsCount: product.reviewsCount,
-                brand: product.brand,
-                seller_name: product.seller?.businessName || product.seller?.firstName,
-                seller_new: product.seller?.isNewSeller,
-                image: getProductImageUrl(product.images?.[0]?.url)
-              }
-              return <ProductCard key={product.id} product={cardProduct} />
-            })}
-          </div>
-        )}
-      </main>
-    </div>
-
-    <BackToTop />
+      <BackToTop />
     </>
   )
 }

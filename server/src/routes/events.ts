@@ -3,52 +3,84 @@ import { prisma } from '../db';
 
 const router = Router();
 
-// Helper: resolve product's categoryId and sellerId given a productId.
-// Returns null when the product no longer exists.
+// Only genuine product-discovery clicks should contribute to the
+// recommendation click-rate metric.
+//
+// We intentionally DO NOT count "add_to_cart_button" here because CART
+// already has its own recommendation signal. Counting the same action
+// as both CART and click-rate would reward the same action twice.
+const CLICK_RATE_ELEMENTS = new Set([
+  'product_card',
+  'quick_view_button',
+]);
+
 async function resolveProduct(productId: string) {
   const product = await prisma.product.findUnique({
     where: { id: productId },
-    select: { categoryId: true, sellerId: true },
+    select: {
+      categoryId: true,
+      sellerId: true,
+    },
   });
-  if (!product) return null;
+
+  if (!product) {
+    return null;
+  }
+
   return {
     categoryId: product.categoryId,
     sellerId: product.sellerId,
   };
 }
 
-// POST track product view — writes to both ProductView (analytics) and UserBehaviour (ML personalization)
+// -------------------------------------------------------------------------
+// PRODUCT VIEW
+// -------------------------------------------------------------------------
+
 router.post('/view', async (req, res) => {
   try {
-    const { userId, productId, timeSpent, scrollDepth, source } = req.body;
+    const {
+      userId,
+      productId,
+      timeSpent,
+      scrollDepth,
+      source,
+    } = req.body;
 
     if (!productId) {
-      return res.status(400).json({ error: 'Product ID required' });
+      return res.status(400).json({
+        error: 'Product ID required',
+      });
     }
 
-    // Telemetry is best-effort: if the product no longer exists (stale link,
-    // deleted listing) acknowledge the event without writing — ProductView.productId
-    // is a required FK, so inserting would throw P2003 → 500.
     const resolved = await resolveProduct(productId);
+
     if (!resolved) {
-      return res.status(200).json({ skipped: true, reason: 'product_not_found' });
+      return res.status(200).json({
+        skipped: true,
+        reason: 'product_not_found',
+      });
     }
 
     const uid = userId || null;
 
-    // 1. Create ProductView record (for analytics dashboard)
     const view = prisma.productView.create({
       data: {
         userId: uid,
         productId,
-        timeSpent: timeSpent ? parseInt(timeSpent) : null,
-        scrollDepth: scrollDepth ? parseInt(scrollDepth) : null,
+        timeSpent:
+          timeSpent !== undefined && timeSpent !== null
+            ? parseInt(timeSpent)
+            : null,
+        scrollDepth:
+          scrollDepth !== undefined && scrollDepth !== null
+            ? parseInt(scrollDepth)
+            : null,
       },
     });
 
-    // 2. Create UserBehaviour record (for ML recommendation engine — category affinity, collab signals)
-    //    Only for logged-in users (UserBehaviour.userId is a required FK)
     let behaviour: Promise<any> | null = null;
+
     if (uid) {
       behaviour = prisma.userBehaviour.create({
         data: {
@@ -59,47 +91,80 @@ router.post('/view', async (req, res) => {
           sellerId: resolved.sellerId,
           source: source || 'product_details',
           metadata: {
-            timeSpent: timeSpent ? parseInt(timeSpent) : null,
-            scrollDepth: scrollDepth ? parseInt(scrollDepth) : null,
+            timeSpent:
+              timeSpent !== undefined && timeSpent !== null
+                ? parseInt(timeSpent)
+                : null,
+            scrollDepth:
+              scrollDepth !== undefined && scrollDepth !== null
+                ? parseInt(scrollDepth)
+                : null,
           },
         },
       });
     }
 
-    const promises = behaviour ? [view, behaviour] : [view];
+    const promises: Promise<any>[] = [view];
+
+    if (behaviour) {
+      promises.push(behaviour);
+    }
+
     const [createdView] = await Promise.all(promises);
 
-    res.status(201).json(createdView);
+    return res.status(201).json(createdView);
   } catch (error) {
-    // Close the TOCTOU race: if the product is deleted between the existence
-    // check above and the insert, the FK still throws P2003 — treat it as a
-    // skip rather than a 500.
     if ((error as any)?.code === 'P2003') {
-      return res.status(200).json({ skipped: true, reason: 'product_not_found' });
+      return res.status(200).json({
+        skipped: true,
+        reason: 'product_not_found',
+      });
     }
+
     console.error('Track view error:', error);
-    res.status(500).json({ error: 'Failed to track view' });
+
+    return res.status(500).json({
+      error: 'Failed to track view',
+    });
   }
 });
 
-// POST track click — writes to both ClickEvent and UserBehaviour
+// -------------------------------------------------------------------------
+// PRODUCT CLICK
+// -------------------------------------------------------------------------
+
 router.post('/click', async (req, res) => {
   try {
-    const { userId, productId, source, elementClicked } = req.body;
+    const {
+      userId,
+      productId,
+      source,
+      elementClicked,
+    } = req.body;
 
     if (!productId) {
-      return res.status(400).json({ error: 'Product ID required' });
+      return res.status(400).json({
+        error: 'Product ID required',
+      });
     }
 
-    // Telemetry is best-effort: skip missing products (ClickEvent.productId is a required FK)
     const resolved = await resolveProduct(productId);
+
     if (!resolved) {
-      return res.status(200).json({ skipped: true, reason: 'product_not_found' });
+      return res.status(200).json({
+        skipped: true,
+        reason: 'product_not_found',
+      });
     }
 
     const uid = userId || null;
 
-    // 1. Create ClickEvent record
+    /*
+     * 1. Existing analytics click.
+     *
+     * Keep this because ClickEvent can still be useful for analytics and
+     * historical reporting.
+     */
     const click = prisma.clickEvent.create({
       data: {
         userId: uid,
@@ -108,8 +173,14 @@ router.post('/click', async (req, res) => {
       },
     });
 
-    // 2. Create UserBehaviour record (only for logged-in users)
+    /*
+     * 2. Existing UserBehaviour click.
+     *
+     * Only logged-in users can have UserBehaviour because userId is
+     * required there.
+     */
     let behaviour: Promise<any> | null = null;
+
     if (uid) {
       behaviour = prisma.userBehaviour.create({
         data: {
@@ -119,32 +190,79 @@ router.post('/click', async (req, res) => {
           categoryId: resolved.categoryId,
           sellerId: resolved.sellerId,
           source: source || 'unknown',
-          metadata: { elementClicked: elementClicked || null },
+          metadata: {
+            elementClicked: elementClicked || null,
+          },
         },
       });
     }
 
-    const promises = behaviour ? [click, behaviour] : [click];
+    /*
+     * 3. New ProductClickHistory record.
+     *
+     * This is the table used by the recommendation equation.
+     *
+     * We only insert when the user is actually discovering/opening a
+     * product. Clicking Add to Cart is deliberately not counted here.
+     */
+    const shouldCountForClickRate =
+      CLICK_RATE_ELEMENTS.has(elementClicked || '');
+
+    const clickRateHistory = shouldCountForClickRate
+      ? prisma.productClickHistory.create({
+          data: {
+            userId: uid,
+            productId,
+            source: source || 'unknown',
+            elementClicked: elementClicked || null,
+          },
+        })
+      : null;
+
+    const promises: Promise<any>[] = [click];
+
+    if (behaviour) {
+      promises.push(behaviour);
+    }
+
+    if (clickRateHistory) {
+      promises.push(clickRateHistory);
+    }
+
     const [createdClick] = await Promise.all(promises);
 
-    res.status(201).json(createdClick);
+    return res.status(201).json(createdClick);
   } catch (error) {
-    // Same TOCTOU hardening as /view — never 500 on a stale FK reference.
     if ((error as any)?.code === 'P2003') {
-      return res.status(200).json({ skipped: true, reason: 'product_not_found' });
+      return res.status(200).json({
+        skipped: true,
+        reason: 'product_not_found',
+      });
     }
+
     console.error('Track click error:', error);
-    res.status(500).json({ error: 'Failed to track click' });
+
+    return res.status(500).json({
+      error: 'Failed to track click',
+    });
   }
 });
 
-// POST track search
+// -------------------------------------------------------------------------
+// SEARCH
+// -------------------------------------------------------------------------
+
 router.post('/search', async (req, res) => {
   try {
-    const { userId, query } = req.body;
+    const {
+      userId,
+      query,
+    } = req.body;
 
     if (!query) {
-      return res.status(400).json({ error: 'Query required' });
+      return res.status(400).json({
+        error: 'Query required',
+      });
     }
 
     const search = await prisma.searchHistory.create({
@@ -154,41 +272,56 @@ router.post('/search', async (req, res) => {
       },
     });
 
-    // Also log to UserBehaviour for ML (fire-and-forget)
     if (userId) {
       prisma.userBehaviour.create({
         data: {
           userId,
           eventType: 'SEARCH',
           source: 'search_page',
-          metadata: { query },
+          metadata: {
+            query,
+          },
         },
       }).catch(() => {});
     }
 
-    res.status(201).json(search);
+    return res.status(201).json(search);
   } catch (error) {
     console.error('Track search error:', error);
-    res.status(500).json({ error: 'Failed to track search' });
+
+    return res.status(500).json({
+      error: 'Failed to track search',
+    });
   }
 });
 
-// POST generic behaviour event (backward compatibility)
+// -------------------------------------------------------------------------
+// GENERIC USER BEHAVIOUR
+// -------------------------------------------------------------------------
+
 router.post('/behaviour', async (req, res) => {
   try {
-    const { userId, eventType, productId, source, metadata } = req.body;
+    const {
+      userId,
+      eventType,
+      productId,
+      source,
+      metadata,
+    } = req.body;
 
     if (!userId || !eventType) {
-      return res.status(400).json({ error: 'User ID and eventType required' });
+      return res.status(400).json({
+        error: 'User ID and eventType required',
+      });
     }
 
-    // Resolve category/seller from product if provided; null out the product
-    // reference when it no longer exists (UserBehaviour.productId is an FK)
     let resolvedProductId: string | null = productId || null;
     let categoryId: string | null = null;
     let sellerId: string | null = null;
+
     if (productId) {
       const resolved = await resolveProduct(productId);
+
       if (resolved) {
         categoryId = resolved.categoryId;
         sellerId = resolved.sellerId;
@@ -209,10 +342,13 @@ router.post('/behaviour', async (req, res) => {
       },
     });
 
-    res.status(201).json(behaviour);
+    return res.status(201).json(behaviour);
   } catch (error) {
     console.error('Track behaviour error:', error);
-    res.status(500).json({ error: 'Failed to track behaviour' });
+
+    return res.status(500).json({
+      error: 'Failed to track behaviour',
+    });
   }
 });
 

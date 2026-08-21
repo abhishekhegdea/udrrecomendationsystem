@@ -1,129 +1,234 @@
 """
-Celery tasks for the UdrCrafts ML recommendation engine.
-
-These tasks are picked up automatically by the Celery worker because
-``celery_app.conf.include`` contains ``"app.workers.tasks"``.
-
-Run the worker with:
-    celery -A app.workers.celery_app worker --loglevel=info -P solo
+Celery background tasks for the UdrCrafts recommendation system.
 """
 
 import logging
 
 from app.workers.celery_app import celery_app
 
+
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Trending scores (periodic — every hour)
+# TRENDING
 # ---------------------------------------------------------------------------
+
 @celery_app.task
 def update_trending():
     """
-    Recalculate decaying popularity scores for trending products.
-    Called every hour via ``beat_schedule``.
+    Recalculate trending scores.
+
+    Existing placeholder retained.
     """
-    logger.info("Updating trending scores...")
-    # TODO: Implement score decay based on recent click/view events
+
+    logger.info(
+        "Updating trending scores..."
+    )
+
+    # TODO:
+    # Implement time-decayed trending calculation.
+
     return True
 
 
 # ---------------------------------------------------------------------------
-# Collaborative model retraining (periodic — every day)
+# COLLABORATIVE MODEL
 # ---------------------------------------------------------------------------
+
 @celery_app.task
 def retrain_collaborative_model():
     """
-    Retrain the LightFM matrix-factorisation model using fresh interaction data.
-    Called every day via ``beat_schedule``.
+    Retrain collaborative filtering using latest interaction data.
     """
+
     from app.database import SessionLocal
     from app.ml.collaborative import collaborative_model
 
-    logger.info("Retraining Matrix Factorization model...")
+    logger.info(
+        "Retraining collaborative model..."
+    )
+
     db = SessionLocal()
+
     try:
         success = collaborative_model.train(db)
+
         if success:
-            logger.info("Successfully retrained Collaborative Filter.")
+            logger.info(
+                "Collaborative model successfully retrained."
+            )
         else:
-            logger.warning("Failed to retrain (possibly not enough data).")
+            logger.warning(
+                "Collaborative model retraining skipped or failed."
+            )
+
     finally:
         db.close()
+
     return True
 
 
 # ---------------------------------------------------------------------------
-# Data retention — purge stale UserBehaviour rows (periodic — weekly)
+# EXISTING USER-BEHAVIOUR RETENTION
 # ---------------------------------------------------------------------------
+
 @celery_app.task
 def cleanup_user_behaviour():
     """
-    Delete ``UserBehaviour`` rows that exceed their event type's retention
-    period (90 / 180 / 365 days depending on event type).
-
-    Runs weekly via ``beat_schedule``.
+    Remove old UserBehaviour records according to existing retention rules.
     """
+
     from app.database import SessionLocal
     from app.core.retention import retain_user_behaviour
 
-    logger.info("UserBehaviour retention cleanup started...")
+    logger.info(
+        "UserBehaviour retention cleanup started..."
+    )
+
     db = SessionLocal()
+
     try:
         summary = retain_user_behaviour(db)
-        logger.info("Cleanup result: %s", summary.summary_line)
+
+        logger.info(
+            "Cleanup result: %s",
+            summary.summary_line,
+        )
+
     except Exception:
-        logger.exception("Retention cleanup failed.")
+        logger.exception(
+            "UserBehaviour retention cleanup failed."
+        )
+
     finally:
         db.close()
+
     return True
 
 
 # ---------------------------------------------------------------------------
-# On-demand: generate embedding for a single product
+# NEW:
+# 7-DAY PRODUCT CLICK HISTORY RETENTION
 # ---------------------------------------------------------------------------
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
-def generate_product_embedding(self, product_id: str) -> bool:
+
+@celery_app.task
+def cleanup_product_click_history():
     """
-    Generate and persist the 384-dim pgvector embedding for a single product.
+    Delete ProductClickHistory records older than seven days.
 
-    This task is designed to be called from the backend API whenever a
-    seller creates or updates a product.  Because SentenceTransformer
-    models are lazy-loaded, the first invocation will be slightly slower
-    (~2 s) while the model downloads / loads; subsequent calls reuse the
-    cached model.
+    This runs every hour through Celery Beat.
 
-    Parameters
-    ----------
-    product_id : str
-        UUID of the Product row to embed.
-
-    Returns
-    -------
-    bool
-        ``True`` on success, ``False`` if the product was not found.
-
-    Retries
-    -------
-    Up to 3 times with a 10-second delay between attempts.
+    Recommendation queries ALSO explicitly use a seven-day cutoff,
+    therefore an old row cannot affect ranking even between cleanup runs.
     """
+
+    from datetime import datetime, timedelta
+
+    from app.database import SessionLocal
+    from app.models import ProductClickHistory
+
+    cutoff = (
+        datetime.utcnow()
+        - timedelta(days=7)
+    )
+
+    logger.info(
+        "ProductClickHistory cleanup started. cutoff=%s",
+        cutoff.isoformat(),
+    )
+
+    db = SessionLocal()
+
+    try:
+        deleted = (
+            db.query(ProductClickHistory)
+            .filter(
+                ProductClickHistory.createdAt
+                < cutoff
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        db.commit()
+
+        logger.info(
+            "ProductClickHistory cleanup removed %d records.",
+            deleted,
+        )
+
+        return deleted
+
+    except Exception:
+        db.rollback()
+
+        logger.exception(
+            "ProductClickHistory cleanup failed."
+        )
+
+        raise
+
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# EXISTING PRODUCT EMBEDDING TASK
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+)
+def generate_product_embedding(
+    self,
+    product_id: str,
+) -> bool:
+    """
+    Generate and persist a 384-dimensional embedding for one product.
+    """
+
     from app.database import SessionLocal
     from app.ml.embedding_service import embed_single_product
 
-    logger.info("Generating embedding for product %s ...", product_id)
+    logger.info(
+        "Generating embedding for product %s...",
+        product_id,
+    )
 
     db = SessionLocal()
+
     try:
-        success = embed_single_product(db, product_id)
+        success = embed_single_product(
+            db,
+            product_id,
+        )
+
         if success:
-            logger.info("Embedding stored for product %s.", product_id)
+            logger.info(
+                "Embedding stored for product %s.",
+                product_id,
+            )
         else:
-            logger.warning("Product %s not found — no embedding generated.", product_id)
+            logger.warning(
+                "Product %s was not found.",
+                product_id,
+            )
+
         return success
+
     except Exception as exc:
-        logger.exception("Failed to generate embedding for product %s.", product_id)
-        # Retry up to max_retries times with exponential backoff
-        raise self.retry(exc=exc)
+        logger.exception(
+            "Failed to generate embedding for product %s.",
+            product_id,
+        )
+
+        raise self.retry(
+            exc=exc
+        )
+
     finally:
         db.close()
