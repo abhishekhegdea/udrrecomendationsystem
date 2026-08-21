@@ -1,11 +1,18 @@
 /**
- * track.ts — Fire-and-forget event tracking for ML personalization.
+ * Fire-and-forget event tracking used by recommendation/personalisation.
  *
- * Each function sends events to **both**:
- *   - Node.js events API (localhost:3001) → creates ProductView / ClickEvent + UserBehaviour
- *   - Python ML event tracker (localhost:8000) → creates UserBehaviour for immediate signals
+ * IMPORTANT:
  *
- * All calls are fire-and-forget with `.catch(() => {})` so they never block the UI.
+ * CLICK is sent ONLY to the Node backend.
+ *
+ * Node now creates:
+ *
+ *   1. ClickEvent
+ *   2. UserBehaviour
+ *   3. ProductClickHistory
+ *
+ * Therefore also sending CLICK to FastAPI would duplicate the same click
+ * inside UserBehaviour.
  */
 
 import api from './api'
@@ -13,15 +20,25 @@ import api from './api'
 const NODE_API = 'http://localhost:3001/api/events'
 const ML_API = 'http://localhost:8000/api/v1/events'
 
-/** Track a product view event */
+// --------------------------------------------------------------------------
+// PRODUCT VIEW
+// --------------------------------------------------------------------------
+
 export function trackProductView(
   userId: string,
   productId: string,
-  opts?: { timeSpent?: number; scrollDepth?: number; source?: string }
+  opts?: {
+    timeSpent?: number
+    scrollDepth?: number
+    source?: string
+  }
 ) {
-  const { timeSpent, scrollDepth, source = 'product_card' } = opts || {}
+  const {
+    timeSpent,
+    scrollDepth,
+    source = 'product_card',
+  } = opts || {}
 
-  // Node.js API (creates ProductView + UserBehaviour)
   api.post(`${NODE_API}/view`, {
     userId,
     productId,
@@ -30,7 +47,6 @@ export function trackProductView(
     source,
   }).catch(() => {})
 
-  // Python ML API (creates UserBehaviour immediately)
   api.post(`${ML_API}/view`, {
     user_id: userId,
     product_id: productId,
@@ -40,45 +56,60 @@ export function trackProductView(
   }).catch(() => {})
 }
 
-/** Track a click event */
-export function trackClick(
-  userId: string,
-  productId: string,
-  opts?: { source?: string; elementClicked?: string }
-) {
-  const { source = 'unknown', elementClicked } = opts || {}
+// --------------------------------------------------------------------------
+// CLICK
+// --------------------------------------------------------------------------
 
+export function trackClick(
+  userId: string | null | undefined,
+  productId: string,
+  opts?: {
+    source?: string
+    elementClicked?: string
+  }
+) {
+  const {
+    source = 'unknown',
+    elementClicked,
+  } = opts || {}
+
+  /*
+   * Node is the canonical writer for click events.
+   *
+   * Do NOT duplicate this request to FastAPI.
+   */
   api.post(`${NODE_API}/click`, {
-    userId,
+    userId: userId ?? null,
     productId,
     source,
     elementClicked: elementClicked ?? null,
   }).catch(() => {})
-
-  api.post(`${ML_API}/click`, {
-    user_id: userId,
-    product_id: productId,
-    source,
-    element_clicked: elementClicked ?? null,
-  }).catch(() => {})
 }
 
-/** Track a wishlist event (add / remove) */
+// --------------------------------------------------------------------------
+// WISHLIST
+// --------------------------------------------------------------------------
+
 export function trackWishlist(
   userId: string,
   productId: string,
   action: 'add' | 'remove',
-  opts?: { source?: string }
+  opts?: {
+    source?: string
+  }
 ) {
-  const { source = 'unknown' } = opts || {}
+  const {
+    source = 'unknown',
+  } = opts || {}
 
-  // Use the Node.js generic behaviour endpoint for wishlist
   api.post(`${NODE_API}/behaviour`, {
     userId,
     eventType: 'WISHLIST',
     productId,
     source,
-    metadata: { action },
+    metadata: {
+      action,
+    },
   }).catch(() => {})
 
   api.post(`${ML_API}/wishlist`, {
@@ -89,21 +120,33 @@ export function trackWishlist(
   }).catch(() => {})
 }
 
-/** Track a cart event (add / remove / update) */
+// --------------------------------------------------------------------------
+// CART
+// --------------------------------------------------------------------------
+
 export function trackCart(
   userId: string,
   productId: string,
   action: 'add' | 'remove' | 'update',
-  opts?: { quantity?: number; source?: string }
+  opts?: {
+    quantity?: number
+    source?: string
+  }
 ) {
-  const { quantity = 1, source = 'unknown' } = opts || {}
+  const {
+    quantity = 1,
+    source = 'unknown',
+  } = opts || {}
 
   api.post(`${NODE_API}/behaviour`, {
     userId,
     eventType: 'CART',
     productId,
     source,
-    metadata: { action, quantity },
+    metadata: {
+      action,
+      quantity,
+    },
   }).catch(() => {})
 
   api.post(`${ML_API}/cart`, {
@@ -115,13 +158,22 @@ export function trackCart(
   }).catch(() => {})
 }
 
-/** Track a search query event */
+// --------------------------------------------------------------------------
+// SEARCH
+// --------------------------------------------------------------------------
+
 export function trackSearch(
   userId: string,
   query: string,
-  opts?: { resultCount?: number; source?: string }
+  opts?: {
+    resultCount?: number
+    source?: string
+  }
 ) {
-  const { resultCount, source = 'search_page' } = opts || {}
+  const {
+    resultCount,
+    source = 'search_page',
+  } = opts || {}
 
   api.post(`${NODE_API}/search`, {
     userId,

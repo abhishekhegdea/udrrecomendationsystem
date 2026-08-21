@@ -1,350 +1,1971 @@
 # pyrefly: ignore [missing-import]
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session, joinedload
-from app.database import get_db
-from app.models import Product, Seller, User
-from app.ml.content_based import get_similar_products
-from app.ml.hybrid_search import hybrid_search, load_products
-from app.ml.seller_boost import fair_rank, CANCEL_PENALTY_WEIGHT
-from app.core.fairness_config import get_config, update_config
+
+import logging
+
+from time import (
+    perf_counter,
+)
+
+from typing import Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+)
+
+from pydantic import (
+    BaseModel,
+    Field,
+)
+
+from sqlalchemy.orm import (
+    Session,
+    joinedload,
+)
+
+from app.core.fairness_config import (
+    get_config,
+    update_config,
+)
+
+from app.database import (
+    get_db,
+)
+
+from app.ml.click_event_recommendation import (
+    CLICK_EVENT_WINDOW_DAYS,
+    PERSONALIZED_CLICK_WEIGHTS,
+    USER_CLICK_AFFINITY_COMPONENT_WEIGHTS,
+    get_recommendations_from_click_events,
+)
+
+from app.ml.content_based import (
+    get_similar_products,
+)
+
+from app.ml.hybrid_search import (
+    hybrid_search,
+    load_products,
+)
+
+from app.ml.recommendation_score_logger import (
+    ALGORITHM_VERSION,
+    calculate_score_breakdown,
+    persist_recommendation_run,
+)
+
+from app.ml.seller_boost import (
+    CANCEL_PENALTY_WEIGHT,
+    fair_rank,
+)
+
+from app.models import (
+    Product,
+    Seller,
+    User,
+)
+
+
+logger = logging.getLogger(
+    __name__
+)
+
 
 router = APIRouter()
 
-def format_product(p: Product):
-    image_url = '/products/product-vase.jpg'
-    if getattr(p, 'images', None) and len(p.images) > 0:
-        image_url = p.images[0].url
 
-    return {
-        "id": p.id,
-        "name": p.name,
-        "price": getattr(p, 'price', 999),
-        "seller_name": p.seller.firstName if getattr(p, 'seller', None) else "UdrCrafts Artisan",
-        "seller_new": p.seller.isNewSeller if getattr(p, 'seller', None) else False,
-        "image": image_url,
-        "popularity": getattr(p, 'popularity', 0),
-        "score": round(getattr(p, 'final_score', 0), 2),
-        "engagement_score": round(getattr(p, 'engagement_score', 0), 2),
-        "explanation": getattr(p, 'explanation', 'Recommended for you.'),
-        "score_details": getattr(p, 'score_details', None)
-    }
+# ============================================================
+# HELPERS
+# ============================================================
 
-@router.get("/home/{user_id}")
-def get_home_recommendations(user_id: str, db: Session = Depends(get_db)):
-    """
-    Returns hybrid recommendations for the home page, biased by user history.
+def _safe_float(
+    value,
+    default: float = 0.0,
+) -> float:
 
-    Uses the full **RecommendationEngine** pipeline (5 stages):
+    try:
 
-    1. Candidate generation (content-based, collaborative, trending, new
-       arrivals, category affinity, random discovery)
-    2. Feature computation (10 sub-scores per candidate, including the
-       behaviour-based engagement score)
-    3. Score blending (weighted linear combination)
-    4. Business rules (rating threshold, inventory, purchase exclusion,
-       recently-viewed exclusion, seller fairness, category diversity)
-    5. Ranking & selection (final sort, top-N, explanation attachment)
+        return float(
+            value
+        )
 
-    This replaces the previous manual scoring logic that didn't properly
-    use purchase history, UserBehaviour category affinity, or the full
-    signal blending pipeline.
-    """
-    from app.ml.recommendation_engine import get_recommendations
-    
-    user = db.query(User).filter(User.id == user_id).first()
-    seller = db.query(Seller).filter(Seller.id == user_id).first()
-    
-    user_city_id = getattr(user, 'cityId', None) or getattr(seller, 'cityId', None)
-    user_state_id = getattr(user, 'stateId', None) or getattr(seller, 'stateId', None)
+    except (
+        TypeError,
+        ValueError,
+    ):
 
-    results = get_recommendations(
-        db, 
-        user_id, 
-        limit=20,
-        user_city_id=user_city_id,
-        user_state_id=user_state_id
+        return default
+
+
+def _percentage(
+    value: float,
+    digits: int = 3,
+) -> float:
+
+    return round(
+        _safe_float(
+            value
+        )
+        * 100.0,
+        digits,
     )
 
-    # Attach ScoredProduct fields as transient attributes so we can
-    # reuse the existing format_product() helper
+
+def _weight_percentage(
+    key: str,
+) -> float:
+
+    return _percentage(
+        PERSONALIZED_CLICK_WEIGHTS.get(
+            key,
+            0.0,
+        )
+    )
+
+
+def _contribution(
+    score: float,
+    weight_key: str,
+) -> float:
+
+    return (
+        _safe_float(
+            score
+        )
+        *
+        PERSONALIZED_CLICK_WEIGHTS.get(
+            weight_key,
+            0.0,
+        )
+    )
+
+
+def _contribution_percentage(
+    score: float,
+    weight_key: str,
+) -> float:
+
+    return _percentage(
+        _contribution(
+            score,
+            weight_key,
+        )
+    )
+
+
+# ============================================================
+# PRODUCT FORMATTER
+# ============================================================
+
+def format_product(
+    product: Product,
+):
+
+    image_url = (
+        "/products/product-vase.jpg"
+    )
+
+
+    if getattr(
+        product,
+        "images",
+        None,
+    ):
+
+        if len(
+            product.images
+        ) > 0:
+
+            image_url = (
+                product.images[
+                    0
+                ].url
+            )
+
+
+    final_score = (
+        _safe_float(
+            getattr(
+                product,
+                "final_score",
+                0.0,
+            )
+        )
+    )
+
+
+    click_rate_score = (
+        _safe_float(
+            getattr(
+                product,
+                "click_rate_score",
+                0.0,
+            )
+        )
+    )
+
+
+    engagement_score = (
+        _safe_float(
+            getattr(
+                product,
+                "engagement_score",
+                0.0,
+            )
+        )
+    )
+
+
+    user_click_affinity_score = (
+        _safe_float(
+            getattr(
+                product,
+                "user_click_affinity_score",
+                0.0,
+            )
+        )
+    )
+
+
+    seller = (
+        getattr(
+            product,
+            "seller",
+            None,
+        )
+    )
+
+
+    return {
+
+        "id":
+            product.id,
+
+        "name":
+            product.name,
+
+        "price":
+            getattr(
+                product,
+                "price",
+                999,
+            ),
+
+        "seller_name":
+            (
+                getattr(
+                    seller,
+                    "firstName",
+                    None,
+                )
+
+                or getattr(
+                    seller,
+                    "businessName",
+                    None,
+                )
+
+                or
+                "UdrCrafts Artisan"
+            ),
+
+        "seller_new":
+            bool(
+                getattr(
+                    seller,
+                    "isNewSeller",
+                    False,
+                )
+            ),
+
+        "image":
+            image_url,
+
+        "popularity":
+            getattr(
+                product,
+                "popularity",
+                0,
+            ),
+
+        # ====================================================
+        # FINAL SCORE
+        # ====================================================
+
+        "score":
+            round(
+                final_score,
+                6,
+            ),
+
+        "score_percentage":
+            _percentage(
+                final_score
+            ),
+
+        # ====================================================
+        # PRODUCT CLICK POPULARITY
+        # ====================================================
+
+        # Backward compatibility
+        "click_rate_score":
+            round(
+                click_rate_score,
+                6,
+            ),
+
+        "click_rate_percentage":
+            _percentage(
+                click_rate_score
+            ),
+
+        # Better descriptive name
+        "product_click_popularity_score":
+            round(
+                click_rate_score,
+                6,
+            ),
+
+        "product_click_popularity_percentage":
+            _percentage(
+                click_rate_score
+            ),
+
+        "product_clicks_7d":
+            int(
+                getattr(
+                    product,
+                    "product_clicks_7d",
+                    0,
+                )
+                or 0
+            ),
+
+        "product_clicks_per_day":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "product_clicks_per_day",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        # ====================================================
+        # USER CLICK AFFINITY
+        # ====================================================
+
+        "user_click_affinity_score":
+            round(
+                user_click_affinity_score,
+                6,
+            ),
+
+        "user_click_affinity_percentage":
+            _percentage(
+                user_click_affinity_score
+            ),
+
+        # ====================================================
+        # ENGAGEMENT
+        # ====================================================
+
+        "engagement_score":
+            round(
+                engagement_score,
+                6,
+            ),
+
+        "explanation":
+            getattr(
+                product,
+                "explanation",
+                "Recommended for you.",
+            ),
+
+        "score_details":
+            getattr(
+                product,
+                "score_details",
+                None,
+            ),
+    }
+
+
+# ============================================================
+# HOME RECOMMENDATIONS
+# ============================================================
+
+@router.get(
+    "/home/{user_id}"
+)
+def get_home_recommendations(
+    user_id: str,
+    db: Session = Depends(
+        get_db
+    ),
+):
+    """
+    Personalized recommendation endpoint.
+
+    Click behaviour is represented by two independent signals:
+
+    Product Click Popularity = 4%
+    User Click Affinity      = 10%
+    """
+
+
+    user = (
+        db.query(
+            User
+        )
+        .filter(
+            User.id
+            == user_id
+        )
+        .first()
+    )
+
+
+    seller = (
+        db.query(
+            Seller
+        )
+        .filter(
+            Seller.id
+            == user_id
+        )
+        .first()
+    )
+
+
+    user_city_id = (
+        getattr(
+            user,
+            "cityId",
+            None,
+        )
+        or getattr(
+            seller,
+            "cityId",
+            None,
+        )
+    )
+
+
+    user_state_id = (
+        getattr(
+            user,
+            "stateId",
+            None,
+        )
+        or getattr(
+            seller,
+            "stateId",
+            None,
+        )
+    )
+
+
+    # ========================================================
+    # RUN RECOMMENDATION ENGINE
+    # ========================================================
+
+    recommendation_started = (
+        perf_counter()
+    )
+
+
+    results = (
+        get_recommendations_from_click_events(
+
+            db,
+
+            user_id,
+
+            limit=
+                20,
+
+            user_city_id=
+                user_city_id,
+
+            user_state_id=
+                user_state_id,
+        )
+    )
+
+
+    execution_time_ms = (
+        (
+            perf_counter()
+            - recommendation_started
+        )
+        * 1000.0
+    )
+
+
     formatted = []
-    for sp in results:
-        setattr(sp.product, "final_score", sp.final_score)
-        setattr(sp.product, "explanation", sp.explanation)
-        setattr(sp.product, "engagement_score", sp.engagement_score)
-        setattr(sp.product, "score_details", {
-            "content": round(sp.content_score, 3),
-            "collab": round(sp.collab_score, 3),
-            "trend": round(sp.trend_score, 3),
-            "seasonal": round(sp.seasonal_boost, 3),
-            "location": round(sp.location_boost, 3),
-            "category": round(sp.category_boost, 3),
-            "brand": round(sp.brand_boost, 3),
-            "rating": round(sp.rating_score, 3),
-            "seller": round(sp.seller_boost, 3),
-            "source": sp.source,
-        })
-        formatted.append(format_product(sp.product))
+
+    unique_results = []
+
+    seen_product_ids = set()
+
+
+    for scored_product in (
+        results
+    ):
+
+        product = (
+            scored_product
+            .product
+        )
+
+
+        if (
+            product.id
+            in seen_product_ids
+        ):
+            continue
+
+
+        seen_product_ids.add(
+            product.id
+        )
+
+
+        unique_results.append(
+            scored_product
+        )
+
+
+        # ====================================================
+        # STANDARD SIGNALS
+        # ====================================================
+
+        final_score = (
+            _safe_float(
+                scored_product
+                .final_score
+            )
+        )
+
+
+        content_score = (
+            _safe_float(
+                scored_product
+                .content_score
+            )
+        )
+
+
+        collab_score = (
+            _safe_float(
+                scored_product
+                .collab_score
+            )
+        )
+
+
+        trend_score = (
+            _safe_float(
+                scored_product
+                .trend_score
+            )
+        )
+
+
+        seasonal_score = (
+            _safe_float(
+                scored_product
+                .seasonal_boost
+            )
+        )
+
+
+        location_score = (
+            _safe_float(
+                scored_product
+                .location_boost
+            )
+        )
+
+
+        category_score = (
+            _safe_float(
+                scored_product
+                .category_boost
+            )
+        )
+
+
+        brand_score = (
+            _safe_float(
+                scored_product
+                .brand_boost
+            )
+        )
+
+
+        rating_score = (
+            _safe_float(
+                scored_product
+                .rating_score
+            )
+        )
+
+
+        seller_score = (
+            _safe_float(
+                scored_product
+                .seller_boost
+            )
+        )
+
+
+        engagement_score = (
+            _safe_float(
+                scored_product
+                .engagement_score
+            )
+        )
+
+
+        # ====================================================
+        # PRODUCT CLICK POPULARITY
+        # ====================================================
+
+        click_popularity_score = (
+            _safe_float(
+                scored_product
+                .click_rate_score
+            )
+        )
+
+
+        product_clicks_7d = int(
+
+            getattr(
+                scored_product,
+                "product_clicks_7d",
+                0,
+            )
+
+            or 0
+        )
+
+
+        product_clicks_per_day = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "product_clicks_per_day",
+                    0.0,
+                )
+            )
+        )
+
+
+        # ====================================================
+        # USER CLICK AFFINITY
+        # ====================================================
+
+        user_click_affinity_score = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_click_affinity_score",
+                    0.0,
+                )
+            )
+        )
+
+
+        click_affinity_semantic = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_click_affinity_semantic",
+                    0.0,
+                )
+            )
+        )
+
+
+        click_affinity_category = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_click_affinity_category",
+                    0.0,
+                )
+            )
+        )
+
+
+        click_affinity_brand = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_click_affinity_brand",
+                    0.0,
+                )
+            )
+        )
+
+
+        click_affinity_frequency_recency = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_click_affinity_frequency_recency",
+                    0.0,
+                )
+            )
+        )
+
+
+        matched_clicked_product_id = (
+            getattr(
+                scored_product,
+                "matched_clicked_product_id",
+                None,
+            )
+        )
+
+
+        matched_clicked_product_name = (
+            getattr(
+                scored_product,
+                "matched_clicked_product_name",
+                None,
+            )
+        )
+
+
+        # ====================================================
+        # AUDIT SCORE BREAKDOWN
+        # ====================================================
+
+        audit_breakdown = (
+            calculate_score_breakdown(
+                scored_product,
+                weights=
+                    PERSONALIZED_CLICK_WEIGHTS,
+            )
+        )
+
+
+        weighted_score_before_rules = (
+            _safe_float(
+                audit_breakdown[
+                    "weighted_score_before_rules"
+                ]
+            )
+        )
+
+
+        business_rule_adjustment = (
+            _safe_float(
+                audit_breakdown[
+                    "business_rule_adjustment"
+                ]
+            )
+        )
+
+
+        # ====================================================
+        # SCORE DETAILS
+        # ====================================================
+
+        score_details = {
+
+            "content":
+                round(
+                    content_score,
+                    6,
+                ),
+
+            "collab":
+                round(
+                    collab_score,
+                    6,
+                ),
+
+            "trend":
+                round(
+                    trend_score,
+                    6,
+                ),
+
+            "seasonal":
+                round(
+                    seasonal_score,
+                    6,
+                ),
+
+            "location":
+                round(
+                    location_score,
+                    6,
+                ),
+
+            "category":
+                round(
+                    category_score,
+                    6,
+                ),
+
+            "brand":
+                round(
+                    brand_score,
+                    6,
+                ),
+
+            "rating":
+                round(
+                    rating_score,
+                    6,
+                ),
+
+            "seller":
+                round(
+                    seller_score,
+                    6,
+                ),
+
+            "engagement":
+                round(
+                    engagement_score,
+                    6,
+                ),
+
+
+            # =================================================
+            # PRODUCT CLICK POPULARITY
+            # =================================================
+
+            "product_click_popularity":
+                round(
+                    click_popularity_score,
+                    6,
+                ),
+
+            "product_click_popularity_percentage":
+                _percentage(
+                    click_popularity_score
+                ),
+
+            "product_clicks_7d":
+                product_clicks_7d,
+
+            "product_clicks_per_day":
+                round(
+                    product_clicks_per_day,
+                    6,
+                ),
+
+            "product_click_popularity_weight_percentage":
+                _weight_percentage(
+                    "click_rate"
+                ),
+
+            "product_click_popularity_contribution_percentage":
+                _contribution_percentage(
+                    click_popularity_score,
+                    "click_rate",
+                ),
+
+
+            # =================================================
+            # BACKWARD-COMPATIBLE CLICK RATE NAMES
+            # =================================================
+
+            "click_rate":
+                round(
+                    click_popularity_score,
+                    6,
+                ),
+
+            "click_rate_percentage":
+                _percentage(
+                    click_popularity_score
+                ),
+
+            "click_rate_weight_percentage":
+                _weight_percentage(
+                    "click_rate"
+                ),
+
+            "click_rate_contribution_percentage":
+                _contribution_percentage(
+                    click_popularity_score,
+                    "click_rate",
+                ),
+
+
+            # =================================================
+            # USER CLICK AFFINITY
+            # =================================================
+
+            "user_click_affinity":
+                round(
+                    user_click_affinity_score,
+                    6,
+                ),
+
+            "user_click_affinity_percentage":
+                _percentage(
+                    user_click_affinity_score
+                ),
+
+            "user_click_affinity_weight_percentage":
+                _weight_percentage(
+                    "user_click_affinity"
+                ),
+
+            "user_click_affinity_contribution_percentage":
+                _contribution_percentage(
+                    user_click_affinity_score,
+                    "user_click_affinity",
+                ),
+
+
+            # -------------------------------------------------
+            # INTERNAL CLICK AFFINITY CALCULATION
+            # -------------------------------------------------
+
+            "user_click_affinity_components": {
+
+                "semantic_similarity":
+                    round(
+                        click_affinity_semantic,
+                        6,
+                    ),
+
+                "semantic_similarity_percentage":
+                    _percentage(
+                        click_affinity_semantic
+                    ),
+
+                "semantic_component_weight_percentage":
+                    _percentage(
+                        USER_CLICK_AFFINITY_COMPONENT_WEIGHTS[
+                            "semantic"
+                        ]
+                    ),
+
+
+                "category_affinity":
+                    round(
+                        click_affinity_category,
+                        6,
+                    ),
+
+                "category_affinity_percentage":
+                    _percentage(
+                        click_affinity_category
+                    ),
+
+                "category_component_weight_percentage":
+                    _percentage(
+                        USER_CLICK_AFFINITY_COMPONENT_WEIGHTS[
+                            "category"
+                        ]
+                    ),
+
+
+                "brand_affinity":
+                    round(
+                        click_affinity_brand,
+                        6,
+                    ),
+
+                "brand_affinity_percentage":
+                    _percentage(
+                        click_affinity_brand
+                    ),
+
+                "brand_component_weight_percentage":
+                    _percentage(
+                        USER_CLICK_AFFINITY_COMPONENT_WEIGHTS[
+                            "brand"
+                        ]
+                    ),
+
+
+                "frequency_recency":
+                    round(
+                        click_affinity_frequency_recency,
+                        6,
+                    ),
+
+                "frequency_recency_percentage":
+                    _percentage(
+                        click_affinity_frequency_recency
+                    ),
+
+                "frequency_recency_component_weight_percentage":
+                    _percentage(
+                        USER_CLICK_AFFINITY_COMPONENT_WEIGHTS[
+                            "frequency_recency"
+                        ]
+                    ),
+            },
+
+
+            # =================================================
+            # WHICH CLICKED PRODUCT MATCHED?
+            # =================================================
+
+            "matched_clicked_product_id":
+                matched_clicked_product_id,
+
+            "matched_clicked_product_name":
+                matched_clicked_product_name,
+
+
+            # =================================================
+            # CONTRIBUTION OF EACH KPI TO FINAL SCORE
+            # =================================================
+
+            "contribution_percentages": {
+
+                "content":
+                    _contribution_percentage(
+                        content_score,
+                        "content",
+                    ),
+
+                "collaborative":
+                    _contribution_percentage(
+                        collab_score,
+                        "collaborative",
+                    ),
+
+                "trending":
+                    _contribution_percentage(
+                        trend_score,
+                        "trending",
+                    ),
+
+                "seasonal":
+                    _contribution_percentage(
+                        seasonal_score,
+                        "seasonal",
+                    ),
+
+                "location":
+                    _contribution_percentage(
+                        location_score,
+                        "location",
+                    ),
+
+                "category_affinity":
+                    _contribution_percentage(
+                        category_score,
+                        "category_affinity",
+                    ),
+
+                "brand_affinity":
+                    _contribution_percentage(
+                        brand_score,
+                        "brand_affinity",
+                    ),
+
+                "rating":
+                    _contribution_percentage(
+                        rating_score,
+                        "rating",
+                    ),
+
+                "seller_freshness":
+                    _contribution_percentage(
+                        seller_score,
+                        "seller_freshness",
+                    ),
+
+                "product_click_popularity":
+                    _contribution_percentage(
+                        click_popularity_score,
+                        "click_rate",
+                    ),
+
+                "user_click_affinity":
+                    _contribution_percentage(
+                        user_click_affinity_score,
+                        "user_click_affinity",
+                    ),
+
+                "engagement":
+                    _contribution_percentage(
+                        engagement_score,
+                        "engagement",
+                    ),
+            },
+
+
+            # =================================================
+            # COMPLETE FINAL-SCORE TRACE
+            # =================================================
+
+            "weighted_score_before_rules":
+                round(
+                    weighted_score_before_rules,
+                    6,
+                ),
+
+            "weighted_score_before_rules_percentage":
+                _percentage(
+                    weighted_score_before_rules
+                ),
+
+            "business_rule_adjustment":
+                round(
+                    business_rule_adjustment,
+                    6,
+                ),
+
+            "business_rule_adjustment_percentage":
+                _percentage(
+                    business_rule_adjustment
+                ),
+
+            "final_score":
+                round(
+                    final_score,
+                    6,
+                ),
+
+            "final_score_percentage":
+                _percentage(
+                    final_score
+                ),
+
+
+            "source":
+                scored_product
+                .source,
+        }
+
+
+        # ====================================================
+        # ATTACH VALUES TO PRODUCT FOR SERIALIZATION
+        # ====================================================
+
+        setattr(
+            product,
+            "final_score",
+            final_score,
+        )
+
+
+        setattr(
+            product,
+            "explanation",
+            scored_product
+            .explanation,
+        )
+
+
+        setattr(
+            product,
+            "click_rate_score",
+            click_popularity_score,
+        )
+
+
+        setattr(
+            product,
+            "product_clicks_7d",
+            product_clicks_7d,
+        )
+
+
+        setattr(
+            product,
+            "product_clicks_per_day",
+            product_clicks_per_day,
+        )
+
+
+        setattr(
+            product,
+            "user_click_affinity_score",
+            user_click_affinity_score,
+        )
+
+
+        setattr(
+            product,
+            "engagement_score",
+            engagement_score,
+        )
+
+
+        setattr(
+            product,
+            "score_details",
+            score_details,
+        )
+
+
+        formatted.append(
+            format_product(
+                product
+            )
+        )
+
+
+    # ========================================================
+    # SAVE RECOMMENDATION SCORE SNAPSHOT
+    # ========================================================
+
+    recommendation_run_id = None
+
+    score_snapshot_saved = False
+
+    score_snapshot_error = None
+
+
+    try:
+
+        recommendation_run_id = (
+            persist_recommendation_run(
+                db,
+                user_id=
+                    user_id,
+                scored_products=
+                    unique_results,
+                context=
+                    "home",
+                execution_time_ms=
+                    execution_time_ms,
+                weights=
+                    PERSONALIZED_CLICK_WEIGHTS,
+                algorithm_version=
+                    ALGORITHM_VERSION,
+            )
+        )
+
+
+        score_snapshot_saved = True
+
+
+    except Exception as exc:
+
+        # Recommendation delivery must not fail just because audit persistence
+        # failed. Roll back the audit transaction, keep the recommendation
+        # response, and expose the database error for debugging.
+        db.rollback()
+
+
+        score_snapshot_error = str(
+            exc
+        )
+
+
+        logger.exception(
+            "Failed to persist recommendation score snapshot for user %s",
+            user_id,
+        )
+
+
+    # ========================================================
+    # API RESPONSE
+    # ========================================================
 
     return {
-        "user_id": user_id,
-        "recommendations": formatted,
+
+        "user_id":
+            user_id,
+
+
+        # ----------------------------------------------------
+        # RECOMMENDATION AUDIT
+        # ----------------------------------------------------
+
+        "recommendation_run_id":
+            recommendation_run_id,
+
+        "score_snapshot_saved":
+            score_snapshot_saved,
+
+        "score_snapshot_error":
+            score_snapshot_error,
+
+        "algorithm_version":
+            ALGORITHM_VERSION,
+
+        "execution_time_ms":
+            round(
+                execution_time_ms,
+                3,
+            ),
+
+
+        "click_window_days":
+            CLICK_EVENT_WINDOW_DAYS,
+
+        "click_rate_source":
+            "ClickEvent",
+
+        "product_click_popularity_weight_percentage":
+            _weight_percentage(
+                "click_rate"
+            ),
+
+        "user_click_affinity_weight_percentage":
+            _weight_percentage(
+                "user_click_affinity"
+            ),
+
+        "weights_percentage": {
+
+            key:
+                _percentage(
+                    value
+                )
+
+            for (
+                key,
+                value,
+            ) in PERSONALIZED_CLICK_WEIGHTS.items()
+        },
+
+        "recommendations":
+            formatted,
     }
 
-@router.get("/product/{product_id}")
-def get_similar(product_id: str, db: Session = Depends(get_db)):
-    """
-    Returns similar products using pgvector cosine similarity.
-    """
-    similar = get_similar_products(product_id, db, limit=10)
+
+# ============================================================
+# SIMILAR PRODUCTS
+# ============================================================
+
+@router.get(
+    "/product/{product_id}"
+)
+def get_similar(
+    product_id: str,
+    db: Session = Depends(
+        get_db
+    ),
+):
+
+    similar = (
+        get_similar_products(
+            product_id,
+            db,
+            limit=10,
+        )
+    )
+
+
     return {
-        "product_id": product_id,
-        "similar_products": [format_product(p) for p in similar],
-        "explanation": "Because you viewed this product."
+
+        "product_id":
+            product_id,
+
+        "similar_products":
+            [
+                format_product(
+                    product
+                )
+                for product
+                in similar
+            ],
+
+        "explanation":
+            "Because you viewed this product.",
     }
 
-@router.get("/trending")
-def get_trending_products(db: Session = Depends(get_db)):
-    """
-    Returns trending products based on interaction decay scores.
-    """
-    trending = db.query(Product).options(joinedload(Product.images)).order_by(Product.popularity.desc()).limit(10).all()
-    return {
-        "trending_products": [format_product(p) for p in trending],
-        "explanation": "Popular among customers recently."
-    }
 
-@router.get("/new-arrivals")
-def get_new_arrivals(db: Session = Depends(get_db)):
-    """
-    Returns new products heavily weighted towards new sellers (fairness ranking).
-    """
-    new_seller_products = (
-        db.query(Product)
-        .options(joinedload(Product.images))
-        .join(Seller)
-        .filter(Seller.isNewSeller == True)
-        .order_by(Product.createdAt.desc())
-        .limit(20)
+# ============================================================
+# TRENDING
+# ============================================================
+
+@router.get(
+    "/trending"
+)
+def get_trending_products(
+    db: Session = Depends(
+        get_db
+    ),
+):
+
+    trending = (
+        db.query(
+            Product
+        )
+
+        .options(
+            joinedload(
+                Product.images
+            )
+        )
+
+        .order_by(
+            Product
+            .popularity
+            .desc()
+        )
+
+        .limit(
+            10
+        )
+
         .all()
     )
+
+
     return {
-        "new_arrivals": [format_product(p) for p in new_seller_products],
-        "explanation": "Discover new artisans on UdrCrafts."
+
+        "trending_products":
+            [
+                format_product(
+                    product
+                )
+                for product
+                in trending
+            ],
+
+        "explanation":
+            "Popular among customers recently.",
     }
 
 
-# ---------------------------------------------------------------------------
-# Also-bought — retail-style "Customers who bought this also bought"
-# ---------------------------------------------------------------------------
-@router.get("/also-bought/{product_id}")
-def get_also_bought(product_id: str, limit: int = Query(10, ge=1, le=20), db: Session = Depends(get_db)):
-    """
-    Returns products frequently purchased together with the given product.
+# ============================================================
+# NEW ARRIVALS
+# ============================================================
 
-    Algorithm
-    ─────────
-    1. Find all orders that contain the given product.
-    2. Collect every *other* product that appears in those same orders.
-    3. Rank co-occurring products by frequency (most common first).
-    4. Exclude the seed product itself from results.
+@router.get(
+    "/new-arrivals"
+)
+def get_new_arrivals(
+    db: Session = Depends(
+        get_db
+    ),
+):
 
-    This is a pure **purchase-affinity** signal — no embeddings, no
-    collaborative matrix factorisation, just market-basket co-occurrence.
-    It works immediately as soon as orders exist in the database, without
-    needing any model to be trained.
+    new_seller_products = (
+        db.query(
+            Product
+        )
 
-    Returns an empty list when there are no co-purchases yet.
-    """
+        .options(
+            joinedload(
+                Product.images
+            )
+        )
+
+        .join(
+            Seller
+        )
+
+        .filter(
+            Seller.isNewSeller
+            == True
+        )
+
+        .order_by(
+            Product
+            .createdAt
+            .desc()
+        )
+
+        .limit(
+            20
+        )
+
+        .all()
+    )
+
+
+    return {
+
+        "new_arrivals":
+            [
+                format_product(
+                    product
+                )
+                for product
+                in new_seller_products
+            ],
+
+        "explanation":
+            "Discover new artisans on UdrCrafts.",
+    }
+
+
+# ============================================================
+# ALSO BOUGHT
+# ============================================================
+
+@router.get(
+    "/also-bought/{product_id}"
+)
+def get_also_bought(
+    product_id: str,
+
+    limit: int = Query(
+        10,
+        ge=1,
+        le=20,
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
+):
+
     from sqlalchemy import func
-    from app.models import OrderItem, Order
 
-    # Sub-query: find all order IDs that contain the seed product
+    from app.models import (
+        OrderItem,
+    )
+
+
     order_ids_subq = (
-        db.query(OrderItem.orderId)
-        .filter(OrderItem.productId == product_id)
+        db.query(
+            OrderItem.orderId
+        )
+
+        .filter(
+            OrderItem.productId
+            == product_id
+        )
+
         .subquery()
     )
 
-    # Query: count how many times each other product appears in those orders
+
     also_bought = (
         db.query(
             OrderItem.productId,
-            func.count(OrderItem.id).label("co_purchase_count"),
+
+            func.count(
+                OrderItem.id
+            ).label(
+                "co_purchase_count"
+            ),
         )
+
         .filter(
-            OrderItem.orderId.in_(order_ids_subq),
-            OrderItem.productId != product_id,  # exclude the seed
+            OrderItem.orderId.in_(
+                order_ids_subq
+            ),
+
+            OrderItem.productId
+            != product_id,
         )
-        .group_by(OrderItem.productId)
-        .order_by(func.count(OrderItem.id).desc())
-        .limit(limit)
+
+        .group_by(
+            OrderItem.productId
+        )
+
+        .order_by(
+            func.count(
+                OrderItem.id
+            ).desc()
+        )
+
+        .limit(
+            limit
+        )
+
         .all()
     )
+
 
     if not also_bought:
+
         return {
-            "product_id": product_id,
-            "also_bought": [],
-            "explanation": "No co-purchase data available yet.",
+
+            "product_id":
+                product_id,
+
+            "also_bought":
+                [],
+
+            "explanation":
+                "No co-purchase data available yet.",
         }
 
-    # Fetch full product records for the matched IDs
-    matched_ids = [row.productId for row in also_bought]
+
+    matched_ids = [
+
+        row.productId
+
+        for row
+        in also_bought
+    ]
+
+
     products = (
-        db.query(Product)
-        .options(joinedload(Product.images))
-        .filter(Product.id.in_(matched_ids))
+        db.query(
+            Product
+        )
+
+        .options(
+            joinedload(
+                Product.images
+            )
+        )
+
+        .filter(
+            Product.id.in_(
+                matched_ids
+            )
+        )
+
         .all()
     )
 
-    # Preserve the co-occurrence ranking order
-    id_map = {p.id: p for p in products}
-    ranked = []
-    for row in also_bought:
-        p = id_map.get(row.productId)
-        if p:
-            setattr(p, "final_score", min(1.0, row.co_purchase_count / 10.0))
-            setattr(p, "explanation", f"Frequently bought together ({row.co_purchase_count} orders).")
-            ranked.append(p)
 
-    return {
-        "product_id": product_id,
-        "also_bought": [format_product(p) for p in ranked],
-        "explanation": "Customers who bought this also bought these items.",
+    product_map = {
+
+        product.id:
+            product
+
+        for product
+        in products
     }
 
 
-# ---------------------------------------------------------------------------
-# Hybrid semantic + keyword search
-# ---------------------------------------------------------------------------
-@router.get("/search")
+    ranked = []
+
+
+    for row in also_bought:
+
+        product = (
+            product_map.get(
+                row.productId
+            )
+        )
+
+
+        if product is None:
+            continue
+
+
+        setattr(
+
+            product,
+
+            "final_score",
+
+            min(
+                1.0,
+
+                row.co_purchase_count
+                / 10.0,
+            ),
+        )
+
+
+        setattr(
+
+            product,
+
+            "explanation",
+
+            (
+                "Frequently bought together "
+                f"({row.co_purchase_count} orders)."
+            ),
+        )
+
+
+        ranked.append(
+            product
+        )
+
+
+    return {
+
+        "product_id":
+            product_id,
+
+        "also_bought":
+            [
+                format_product(
+                    product
+                )
+                for product
+                in ranked
+            ],
+
+        "explanation":
+            (
+                "Customers who bought this "
+                "also bought these items."
+            ),
+    }
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+@router.get(
+    "/search"
+)
 def search_products(
-    q: str = Query("...", min_length=0, description="Free-text search query"),
-    limit: int = Query(20, ge=1, le=100, description="Results per page"),
-    offset: int = Query(0, ge=0, description="Pagination offset"),
+
+    q: str = Query(
+        "...",
+        min_length=0,
+        description=
+            "Free-text search query",
+    ),
+
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description=
+            "Results per page",
+    ),
+
+    offset: int = Query(
+        0,
+        ge=0,
+        description=
+            "Pagination offset",
+    ),
+
     alpha: float = Query(
         0.7,
         ge=0.0,
         le=1.0,
-        description="Semantic weight (0 = keyword only, 1 = semantic only)",
+        description=(
+            "Semantic weight "
+            "(0 = keyword only, "
+            "1 = semantic only)"
+        ),
     ),
-    db: Session = Depends(get_db),
+
+    db: Session = Depends(
+        get_db
+    ),
 ):
-    """
-    Hybrid product search combining pgvector semantic similarity with
-    PostgreSQL full-text search (tsvector).
 
-    **Query parameters**
 
-    - ``q`` — Free text (e.g. "handwoven wool shawl").  Empty string returns
-      products ordered by popularity.
-    - ``limit`` / ``offset`` — Standard pagination.
-    - ``alpha`` — Blend between 0.0 (keyword-only) and 1.0 (semantic-only).
-      Default 0.7 biases toward semantic meaning, which is usually better
-      for natural-language queries like "warm winter gift".
+    scored_results, total = (
+        hybrid_search(
 
-    **Response**
+            db,
 
-    .. code-block:: json
+            q,
 
-        {
-          "query": "handwoven wool shawl",
-          "alpha": 0.7,
-          "total": 42,
-          "results": [ { "id": "...", "name": "...", ... } ],
-          "explanation": "Results blended from semantic similarity and keyword matching."
-        }
-    """
-    scored_results, total = hybrid_search(
-        db, q, limit=limit, offset=offset, alpha=alpha
+            limit=
+                limit,
+
+            offset=
+                offset,
+
+            alpha=
+                alpha,
+        )
     )
-    products = load_products(db, scored_results)
 
-    # Apply seller fairness boost so new artisans get visibility in search
-    cfg = get_config(db)
-    products = fair_rank(
-        products,
-        total_slots=limit,
-        boost_amount=cfg.boost_amount,
-        new_seller_ratio=cfg.new_seller_ratio,
-        max_per_seller_ratio=cfg.max_per_seller_ratio,
-        attribute="final_score",
-        penalty_weight=CANCEL_PENALTY_WEIGHT,
+
+    products = (
+        load_products(
+            db,
+            scored_results,
+        )
     )
+
+
+    cfg = (
+        get_config(
+            db
+        )
+    )
+
+
+    products = (
+        fair_rank(
+
+            products,
+
+            total_slots=
+                limit,
+
+            boost_amount=
+                cfg.boost_amount,
+
+            new_seller_ratio=
+                cfg.new_seller_ratio,
+
+            max_per_seller_ratio=
+                cfg.max_per_seller_ratio,
+
+            attribute=
+                "final_score",
+
+            penalty_weight=
+                CANCEL_PENALTY_WEIGHT,
+        )
+    )
+
 
     return {
-        "query": q,
-        "alpha": alpha,
-        "total": total,
-        "results": [format_product(p) for p in products],
-        "explanation": "Results blended from semantic similarity and keyword matching, boosted for seller fairness.",
+
+        "query":
+            q,
+
+        "alpha":
+            alpha,
+
+        "total":
+            total,
+
+        "results":
+            [
+                format_product(
+                    product
+                )
+                for product
+                in products
+            ],
+
+        "explanation":
+            (
+                "Results blended from semantic similarity "
+                "and keyword matching, boosted for seller fairness."
+            ),
     }
 
 
-# ---------------------------------------------------------------------------
-# Fairness configuration — admin tuning
-# ---------------------------------------------------------------------------
+# ============================================================
+# FAIRNESS CONFIGURATION
+# ============================================================
 
+class FairnessConfigResponse(
+    BaseModel
+):
 
-class FairnessConfigResponse(BaseModel):
-    """Current fairness settings returned to the admin."""
     boost_amount: float
+
     new_seller_ratio: float
+
     max_per_seller_ratio: float
 
 
-class FairnessConfigUpdate(BaseModel):
-    """Fields an admin can update.  All are optional — omitted fields stay."""
-    boost_amount: float | None = Field(None, ge=0.0, le=1.0, description="Score boost for new sellers")
-    new_seller_ratio: float | None = Field(None, ge=0.0, le=1.0, description="Fraction of slots reserved for new sellers")
-    max_per_seller_ratio: float | None = Field(None, ge=0.0, le=1.0, description="Max fraction of slots per seller")
+class FairnessConfigUpdate(
+    BaseModel
+):
 
-
-@router.get("/fairness-config", response_model=FairnessConfigResponse, summary="Read seller fairness config")
-def get_fairness_config(db: Session = Depends(get_db)):
-    """
-    Return the current seller fairness parameters.
-
-    These values are used by the home page and search endpoints to
-    promote new artisans and prevent seller dominance.
-    """
-    cfg = get_config(db)
-    return FairnessConfigResponse(
-        boost_amount=cfg.boost_amount,
-        new_seller_ratio=cfg.new_seller_ratio,
-        max_per_seller_ratio=cfg.max_per_seller_ratio,
+    boost_amount: Optional[
+        float
+    ] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description=
+            "Score boost for new sellers",
     )
 
 
-@router.put("/fairness-config", response_model=FairnessConfigResponse, summary="Update seller fairness config")
+    new_seller_ratio: Optional[
+        float
+    ] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description=
+            "Fraction of slots reserved for new sellers",
+    )
+
+
+    max_per_seller_ratio: Optional[
+        float
+    ] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description=
+            "Max fraction of slots per seller",
+    )
+
+
+@router.get(
+    "/fairness-config",
+    response_model=
+        FairnessConfigResponse,
+    summary=
+        "Read seller fairness config",
+)
+def get_fairness_config(
+    db: Session = Depends(
+        get_db
+    ),
+):
+
+    cfg = (
+        get_config(
+            db
+        )
+    )
+
+
+    return FairnessConfigResponse(
+
+        boost_amount=
+            cfg.boost_amount,
+
+        new_seller_ratio=
+            cfg.new_seller_ratio,
+
+        max_per_seller_ratio=
+            cfg.max_per_seller_ratio,
+    )
+
+
+@router.put(
+    "/fairness-config",
+    response_model=
+        FairnessConfigResponse,
+    summary=
+        "Update seller fairness config",
+)
 def update_fairness_config(
     body: FairnessConfigUpdate,
-    db: Session = Depends(get_db),
+
+    db: Session = Depends(
+        get_db
+    ),
 ):
-    """
-    Update one or more seller fairness parameters.
 
-    Only the fields included in the request body are changed; omitted
-    fields keep their current values.  Changes take effect immediately
-    on the next recommendation call.
+    cfg = (
+        update_config(
 
-    **Example request** (raise new-seller boost from 0.15 to 0.25):
+            db,
 
-    .. code-block:: json
+            boost_amount=
+                body.boost_amount,
 
-        {"boost_amount": 0.25}
-    """
-    cfg = update_config(
-        db,
-        boost_amount=body.boost_amount,
-        new_seller_ratio=body.new_seller_ratio,
-        max_per_seller_ratio=body.max_per_seller_ratio,
+            new_seller_ratio=
+                body.new_seller_ratio,
+
+            max_per_seller_ratio=
+                body.max_per_seller_ratio,
+        )
     )
+
+
     return FairnessConfigResponse(
-        boost_amount=cfg.boost_amount,
-        new_seller_ratio=cfg.new_seller_ratio,
-        max_per_seller_ratio=cfg.max_per_seller_ratio,
+
+        boost_amount=
+            cfg.boost_amount,
+
+        new_seller_ratio=
+            cfg.new_seller_ratio,
+
+        max_per_seller_ratio=
+            cfg.max_per_seller_ratio,
     )

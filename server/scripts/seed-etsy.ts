@@ -1,329 +1,1346 @@
-import { prisma } from '../src/db'
-import { createReadStream } from 'fs'
-import { parse } from 'csv-parse'
+import {
+  createReadStream,
+  existsSync,
+} from 'fs'
+
+import {
+  homedir,
+} from 'os'
+
+import {
+  basename,
+  isAbsolute,
+  join,
+  resolve,
+} from 'path'
+
+import {
+  parse,
+} from 'csv-parse'
+
 import bcrypt from 'bcryptjs'
 
-const CSV_PATH = process.env.ETSY_CSV_PATH || 'D:/Downloads/etsy.csv/etsy.csv'
-const MAX_PRODUCTS = parseInt(process.env.ETSY_MAX_PRODUCTS || '10000', 10)
-const BATCH_SIZE = 100
+import {
+  prisma,
+} from '../src/db'
+
 
 interface EtsyRow {
-  url: string
-  name: string
-  price: string
-  currency: string
-  availability: string
-  description: string
-  category: string
-  brand: string
-  average_rating: string
-  reviews_count: string
-  images: string
-  product_details: string
-  scraped_at: string
+  url?: string
+  name?: string
+  price?: string
+  currency?: string
+  availability?: string
+  description?: string
+  category?: string
+  brand?: string
+  average_rating?: string
+  reviews_count?: string
+  images?: string
+  product_details?: string
+  scraped_at?: string
 }
 
-function cleanHtml(html: string): string {
+
+const MAX_PRODUCTS =
+  Number.parseInt(
+    process.env
+      .ETSY_MAX_PRODUCTS ||
+      '10000',
+    10
+  ) || 10000
+
+
+const BATCH_SIZE =
+  100
+
+
+function resolveCsvPath():
+  string {
+  const envPath =
+    process.env
+      .ETSY_CSV_PATH
+      ?.trim()
+
+  const candidates: string[] =
+    []
+
+  if (envPath) {
+    candidates.push(
+      isAbsolute(
+        envPath
+      )
+        ? envPath
+        : resolve(
+            process.cwd(),
+            envPath
+          )
+    )
+  }
+
+  /**
+   * Run from server/
+   */
+  candidates.push(
+    resolve(
+      process.cwd(),
+      'etsy.csv'
+    )
+  )
+
+  /**
+   * Repository root:
+   *
+   * udrrecomendationsystem/etsy.csv
+   */
+  candidates.push(
+    resolve(
+      process.cwd(),
+      '..',
+      'etsy.csv'
+    )
+  )
+
+  candidates.push(
+    resolve(
+      process.cwd(),
+      '..',
+      'data',
+      'etsy.csv'
+    )
+  )
+
+  /**
+   * Common macOS locations.
+   */
+  candidates.push(
+    join(
+      homedir(),
+      'Downloads',
+      'etsy.csv'
+    )
+  )
+
+  candidates.push(
+    join(
+      homedir(),
+      'Downloads',
+      'etsy.csv',
+      'etsy.csv'
+    )
+  )
+
+  candidates.push(
+    join(
+      homedir(),
+      'Desktop',
+      'etsy.csv'
+    )
+  )
+
+  const uniqueCandidates =
+    Array.from(
+      new Set(
+        candidates
+      )
+    )
+
+  for (
+    const candidate
+    of uniqueCandidates
+  ) {
+    if (
+      existsSync(
+        candidate
+      )
+    ) {
+      return candidate
+    }
+  }
+
+  console.error('')
+  console.error(
+    '❌ Etsy CSV could not be found.'
+  )
+  console.error('')
+  console.error(
+    'Checked these locations:'
+  )
+
+  for (
+    const candidate
+    of uniqueCandidates
+  ) {
+    console.error(
+      `  - ${candidate}`
+    )
+  }
+
+  console.error('')
+  console.error(
+    'Either copy etsy.csv into the repository root or run:'
+  )
+
+  console.error('')
+
+  console.error(
+    'ETSY_CSV_PATH="/full/path/to/etsy.csv" npm run seed:etsy'
+  )
+
+  console.error('')
+
+  throw new Error(
+    'etsy.csv not found'
+  )
+}
+
+
+function cleanHtml(
+  html: string
+): string {
   return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
+    .replace(
+      /<br\s*\/?>/gi,
+      '\n'
+    )
+    .replace(
+      /<[^>]+>/g,
+      ''
+    )
+    .replace(
+      /&nbsp;/g,
+      ' '
+    )
+    .replace(
+      /&amp;/g,
+      '&'
+    )
+    .replace(
+      /&lt;/g,
+      '<'
+    )
+    .replace(
+      /&gt;/g,
+      '>'
+    )
+    .replace(
+      /&quot;/g,
+      '"'
+    )
+    .replace(
+      /&#39;/g,
+      "'"
+    )
+    .replace(
+      /&#x27;/g,
+      "'"
+    )
+    .replace(
+      /&#x2F;/g,
+      '/'
+    )
+    .replace(
+      /\s+\n/g,
+      '\n'
+    )
+    .replace(
+      /\n\s+/g,
+      '\n'
+    )
     .trim()
 }
 
-function getTopCategory(categoryPath: string): string {
-  if (!categoryPath) return 'Uncategorized'
-  // Category format: "Parent < Subcategory < Subsubcategory"
-  const parts = categoryPath.split(/<|>/).map(p => p.trim()).filter(Boolean)
-  return parts[0] || 'Uncategorized'
-}
 
-function splitImages(imageStr: string): string[] {
-  if (!imageStr) return []
-  // Images are separated by ~ (tilde)
-  return imageStr.split('~').map(u => u.trim()).filter(u => u.length > 0 && u.startsWith('http'))
-}
+function getTopCategory(
+  categoryPath?: string
+): string {
+  if (
+    !categoryPath?.trim()
+  ) {
+    return 'Uncategorized'
+  }
 
-async function main() {
-  console.log('🌱 Seeding database from Etsy CSV...')
-  console.log(`📁 Path: ${CSV_PATH}`)
-  console.log(`📦 Max products: ${MAX_PRODUCTS}`)
+  const parts =
+    categoryPath
+      .split(
+        /<|>/
+      )
+      .map(
+        (part) =>
+          part.trim()
+      )
+      .filter(
+        Boolean
+      )
 
-  // 1. Parse CSV
-  const records: EtsyRow[] = []
-  const parser = createReadStream(CSV_PATH, { encoding: 'utf-8' }).pipe(
-    parse({
-      columns: true,
-      relax_column_count: true,
-      skip_records_with_error: true,
-      bom: true,
-    })
+  return (
+    parts[0] ||
+    'Uncategorized'
   )
+}
 
-  for await (const record of parser) {
-    records.push(record as EtsyRow)
-    if (records.length >= MAX_PRODUCTS) break
+
+function splitImages(
+  imageString?: string
+): string[] {
+  if (
+    !imageString?.trim()
+  ) {
+    return []
   }
 
-  console.log(`📊 Parsed ${records.length} records from CSV`)
+  let values: string[]
 
-  // 2. Extract unique categories & brands
-  const categoryNames = new Set<string>()
-  const brandNames = new Set<string>()
-
-  for (const record of records) {
-    const catName = getTopCategory(record.category)
-    if (catName) categoryNames.add(catName)
-    if (record.brand?.trim()) brandNames.add(record.brand.trim())
+  if (
+    imageString.includes(
+      '~'
+    )
+  ) {
+    values =
+      imageString.split(
+        '~'
+      )
+  } else if (
+    imageString.includes(
+      '|'
+    )
+  ) {
+    values =
+      imageString.split(
+        '|'
+      )
+  } else {
+    values = [
+      imageString,
+    ]
   }
 
-  console.log(`🏷️ Found ${categoryNames.size} unique categories`)
-  console.log(`🏪 Found ${brandNames.size} unique brands`)
+  return values
+    .map(
+      (url) =>
+        url.trim()
+    )
+    .filter(
+      (url) =>
+        /^https?:\/\//i.test(
+          url
+        )
+    )
+    .map(
+      (url) =>
+        url.substring(
+          0,
+          500
+        )
+    )
+}
 
-  // 3. Create/Get categories
-  const categoryMap = new Map<string, string>()
-  for (const catName of categoryNames) {
-    const cat = await prisma.category.upsert({
-      where: { name: catName },
-      update: {},
-      create: { name: catName, description: `Products from Etsy in ${catName}` },
-    })
-    categoryMap.set(catName, cat.id)
-  }
-  console.log(`✅ Ensured ${categoryMap.size} categories exist`)
 
-  // 4. Create/Get sellers from brands
-  const passwordHash = await bcrypt.hash('Seller@123', 10)
-  const sellerMap = new Map<string, string>()
-
-  let sellerIndex = 0
-  for (const brand of brandNames) {
-    const email = `etsy-seller-${sellerIndex}@udrcrafts.com`
-    sellerIndex++
-    try {
-      const seller = await prisma.seller.upsert({
-        where: { email },
-        update: { businessName: brand },
-        create: {
-          firstName: brand.split(' ')[0] || 'Etsy',
-          lastName: brand.split(' ').slice(1).join(' ') || 'Seller',
-          email,
-          phone: `555${String(sellerIndex + 1000).padStart(7, '0')}`,
-          password: passwordHash,
-          businessName: brand,
-          status: 'VERIFIED',
-          isNewSeller: true,
-          rating: 4.0,
-        },
-      })
-      sellerMap.set(brand, seller.id)
-    } catch (err) {
-      console.error(`Failed to create seller for brand "${brand}":`, err)
-    }
+function parsePrice(
+  value?: string
+):
+  number | null {
+  if (!value) {
+    return null
   }
 
-  // Also create a default fallback seller (use a unique phone that won't conflict)
-  const defaultSeller = await prisma.seller.upsert({
-    where: { email: 'default-etsy@udrcrafts.com' },
+  /**
+   * Handles values such as:
+   *
+   * 1299.00
+   * ₹1,299.00
+   * $42.50
+   */
+  const cleaned =
+    value.replace(
+      /[^0-9.-]/g,
+      ''
+    )
+
+  const price =
+    Number.parseFloat(
+      cleaned
+    )
+
+  if (
+    !Number.isFinite(
+      price
+    ) ||
+    price <= 0
+  ) {
+    return null
+  }
+
+  return price
+}
+
+
+function parseRating(
+  value?: string
+): number {
+  const rating =
+    Number.parseFloat(
+      value || ''
+    )
+
+  if (
+    !Number.isFinite(
+      rating
+    )
+  ) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      5,
+      rating
+    )
+  )
+}
+
+
+function parseReviews(
+  value?: string
+): number {
+  if (!value) {
+    return 0
+  }
+
+  const cleaned =
+    value.replace(
+      /[^0-9]/g,
+      ''
+    )
+
+  const reviews =
+    Number.parseInt(
+      cleaned,
+      10
+    )
+
+  if (
+    !Number.isFinite(
+      reviews
+    )
+  ) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    reviews
+  )
+}
+
+
+function getInventory(
+  availability?: string
+): number {
+  const value =
+    (
+      availability ||
+      ''
+    )
+      .trim()
+      .toLowerCase()
+
+  if (
+    value.includes(
+      'outofstock'
+    ) ||
+    value.includes(
+      'out of stock'
+    ) ||
+    value ===
+      'false'
+  ) {
+    return 0
+  }
+
+  /**
+   * Catalog test inventory.
+   */
+  return (
+    Math.floor(
+      Math.random() *
+        50
+    ) + 1
+  )
+}
+
+
+function createProductKey(
+  name: string,
+  brand: string,
+  price: number
+): string {
+  return [
+    name
+      .trim()
+      .toLowerCase(),
+
+    brand
+      .trim()
+      .toLowerCase(),
+
+    price.toFixed(
+      2
+    ),
+  ].join(
+    '::'
+  )
+}
+
+
+async function ensureUsers() {
+  const adminPassword =
+    await bcrypt.hash(
+      'Admin@123',
+      10
+    )
+
+  await prisma.user.upsert({
+    where: {
+      email:
+        'admin@udrcrafts.com',
+    },
+
     update: {},
+
     create: {
-      firstName: 'Etsy',
-      lastName: 'Seller',
-      email: 'default-etsy@udrcrafts.com',
-      phone: '5559999999',
-      password: passwordHash,
-      businessName: 'Etsy Artisan',
-      status: 'VERIFIED',
-      isNewSeller: false,
-      rating: 4.0,
+      firstName:
+        'Admin',
+
+      lastName:
+        'User',
+
+      email:
+        'admin@udrcrafts.com',
+
+      password:
+        adminPassword,
+
+      role:
+        'ADMIN',
+
+      phone:
+        '9999999990',
     },
   })
 
-  console.log(`✅ Ensured ${sellerMap.size + 1} sellers exist (${sellerMap.size} brands + 1 default)`)
+  const buyerPassword =
+    await bcrypt.hash(
+      'Buyer@123',
+      10
+    )
 
-  // 5. Import products
-  let importedCount = 0
-  let skippedCount = 0
-  let batch: any[] = []
+  await prisma.user.upsert({
+    where: {
+      email:
+        'buyer@udrcrafts.com',
+    },
 
-  for (let i = 0; i < records.length; i++) {
-    const record = records[i]
+    update: {},
 
-    const name = record.name?.trim()
-    const price = parseFloat(record.price)
-    if (!name || isNaN(price) || price <= 0) {
-      skippedCount++
-      if (skippedCount <= 5) console.log(`⏭️ Skipping row ${i + 2}: invalid name/price (name="${name}", price=${record.price})`)
-      continue
+    create: {
+      firstName:
+        'Test',
+
+      lastName:
+        'Buyer',
+
+      email:
+        'buyer@udrcrafts.com',
+
+      password:
+        buyerPassword,
+
+      role:
+        'CUSTOMER',
+
+      phone:
+        '9999999991',
+    },
+  })
+}
+
+
+async function main() {
+  console.log('')
+  console.log(
+    '========================================'
+  )
+  console.log(
+    '🌱 UdrCrafts Etsy catalog import'
+  )
+  console.log(
+    '========================================'
+  )
+
+  const csvPath =
+    resolveCsvPath()
+
+  console.log(
+    `📁 CSV: ${csvPath}`
+  )
+
+  console.log(
+    `📄 File: ${basename(csvPath)}`
+  )
+
+  console.log(
+    `📦 Maximum rows: ${MAX_PRODUCTS}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Read CSV
+   * -----------------------------------------------------
+   */
+  const records:
+    EtsyRow[] = []
+
+  const parser =
+    createReadStream(
+      csvPath,
+      {
+        encoding:
+          'utf-8',
+      }
+    ).pipe(
+      parse({
+        columns:
+          true,
+
+        relax_column_count:
+          true,
+
+        skip_records_with_error:
+          true,
+
+        skip_empty_lines:
+          true,
+
+        bom:
+          true,
+
+        trim:
+          false,
+      })
+    )
+
+  for await (
+    const record
+    of parser
+  ) {
+    records.push(
+      record as EtsyRow
+    )
+
+    if (
+      records.length >=
+      MAX_PRODUCTS
+    ) {
+      break
     }
+  }
 
-    const description = cleanHtml(record.description || record.product_details || '')
-    const categoryName = getTopCategory(record.category)
-    const categoryId = categoryMap.get(categoryName)
-    const brand = record.brand?.trim() || 'Unknown'
-    const sellerId = sellerMap.get(brand) || defaultSeller.id
-    const imageUrls = splitImages(record.images)
-    const inventory = record.availability === 'InStock' ? Math.floor(Math.random() * 50) + 1 : 0
-    const averageRating = parseFloat(record.average_rating) || 0
-    const reviewsCount = parseInt(record.reviews_count) || 0
+  console.log(
+    `📊 Parsed ${records.length} CSV rows`
+  )
 
-    if (!categoryId) {
-      skippedCount++
-      continue
-    }
+  if (
+    records.length === 0
+  ) {
+    throw new Error(
+      'CSV contains no readable product rows'
+    )
+  }
 
-    batch.push({
-      name,
-      description: description.substring(0, 2000),
-      price,
-      currency: record.currency || 'USD',
-      brand,
-      averageRating,
-      reviewsCount,
-      etsyUrl: record.url?.trim() || null,
-      inventory,
-      popularity: averageRating * (reviewsCount || 1),
-      sellerId,
-      categoryId,
-      tags: [categoryName],
-      images: {
-        create: imageUrls.map(url => ({ url: url.substring(0, 500) })),
+  /**
+   * -----------------------------------------------------
+   * Existing catalog — protects against duplicates
+   * -----------------------------------------------------
+   */
+  const existingProducts =
+    await prisma.product.findMany({
+      select: {
+        name:
+          true,
+
+        brand:
+          true,
+
+        price:
+          true,
+
+        etsyUrl:
+          true,
       },
     })
 
-    importedCount++
+  const existingUrls =
+    new Set<string>()
 
-    // Batch insert using transaction for performance
-    if (batch.length >= BATCH_SIZE) {
-      try {
-        await prisma.$transaction(
-          batch.map(productData => prisma.product.create({ data: productData }))
-        )
-      } catch (err) {
-        console.error(`\n❌ Batch insert failed at product ${importedCount}:`, err)
-        // Fall back to individual inserts
-        for (const productData of batch) {
-          try {
-            await prisma.product.create({ data: productData })
-          } catch (innerErr) {
-            console.error(`Failed to create product "${productData.name}":`, innerErr)
-          }
-        }
-      }
-      batch = []
-      process.stdout.write(`\r📦 Imported ${importedCount} products...`)
+  const existingKeys =
+    new Set<string>()
+
+  for (
+    const product
+    of existingProducts
+  ) {
+    if (
+      product.etsyUrl
+    ) {
+      existingUrls.add(
+        product.etsyUrl.trim()
+      )
+    }
+
+    existingKeys.add(
+      createProductKey(
+        product.name,
+        product.brand ||
+          'Unknown',
+        product.price
+      )
+    )
+  }
+
+  console.log(
+    `🗃️ Existing products: ${existingProducts.length}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Categories
+   * -----------------------------------------------------
+   */
+  const categoryNames =
+    new Set<string>()
+
+  const brandNames =
+    new Set<string>()
+
+  for (
+    const record
+    of records
+  ) {
+    categoryNames.add(
+      getTopCategory(
+        record.category
+      )
+    )
+
+    const brand =
+      record.brand
+        ?.trim()
+
+    if (brand) {
+      brandNames.add(
+        brand
+      )
     }
   }
 
-  // Insert remaining products
-  if (batch.length > 0) {
+  const categoryMap =
+    new Map<
+      string,
+      string
+    >()
+
+  for (
+    const categoryName
+    of categoryNames
+  ) {
+    const category =
+      await prisma.category.upsert({
+        where: {
+          name:
+            categoryName,
+        },
+
+        update: {},
+
+        create: {
+          name:
+            categoryName,
+
+          description:
+            `Products in ${categoryName}`,
+        },
+      })
+
+    categoryMap.set(
+      categoryName,
+      category.id
+    )
+  }
+
+  console.log(
+    `🏷️ Categories ready: ${categoryMap.size}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Brands
+   * -----------------------------------------------------
+   */
+  const brandIdMap =
+    new Map<
+      string,
+      string
+    >()
+
+  for (
+    const brandName
+    of brandNames
+  ) {
+    const brand =
+      await prisma.brand.upsert({
+        where: {
+          name:
+            brandName,
+        },
+
+        update: {},
+
+        create: {
+          name:
+            brandName,
+        },
+      })
+
+    brandIdMap.set(
+      brandName,
+      brand.id
+    )
+  }
+
+  console.log(
+    `🏷️ Brands ready: ${brandIdMap.size}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Sellers
+   * -----------------------------------------------------
+   */
+  const sellerPassword =
+    await bcrypt.hash(
+      'Seller@123',
+      10
+    )
+
+  const sellerMap =
+    new Map<
+      string,
+      string
+    >()
+
+  let sellerIndex =
+    0
+
+  for (
+    const brandName
+    of brandNames
+  ) {
+    sellerIndex += 1
+
+    const safeIndex =
+      sellerIndex
+        .toString()
+        .padStart(
+          7,
+          '0'
+        )
+
+    const email =
+      `etsy-seller-${sellerIndex}@udrcrafts.com`
+
+    const seller =
+      await prisma.seller.upsert({
+        where: {
+          email,
+        },
+
+        update: {
+          businessName:
+            brandName,
+        },
+
+        create: {
+          firstName:
+            brandName
+              .split(
+                /\s+/
+              )[0] ||
+            'Etsy',
+
+          lastName:
+            brandName
+              .split(
+                /\s+/
+              )
+              .slice(
+                1
+              )
+              .join(
+                ' '
+              ) ||
+            'Seller',
+
+          email,
+
+          phone:
+            `7${safeIndex}00`.substring(
+              0,
+              10
+            ),
+
+          password:
+            sellerPassword,
+
+          businessName:
+            brandName,
+
+          status:
+            'VERIFIED',
+
+          isNewSeller:
+            sellerIndex %
+              4 ===
+            0,
+
+          rating:
+            4.0,
+        },
+      })
+
+    sellerMap.set(
+      brandName,
+      seller.id
+    )
+  }
+
+  const defaultSeller =
+    await prisma.seller.upsert({
+      where: {
+        email:
+          'default-etsy@udrcrafts.com',
+      },
+
+      update: {},
+
+      create: {
+        firstName:
+          'Etsy',
+
+        lastName:
+          'Artisan',
+
+        email:
+          'default-etsy@udrcrafts.com',
+
+        phone:
+          '7999999999',
+
+        password:
+          sellerPassword,
+
+        businessName:
+          'Etsy Artisan',
+
+        status:
+          'VERIFIED',
+
+        isNewSeller:
+          false,
+
+        rating:
+          4.0,
+      },
+    })
+
+  console.log(
+    `👤 Sellers ready: ${sellerMap.size + 1}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Products
+   * -----------------------------------------------------
+   */
+  let importedCount =
+    0
+
+  let duplicateCount =
+    0
+
+  let invalidCount =
+    0
+
+  let failedCount =
+    0
+
+  let batch: any[] =
+    []
+
+  async function flushBatch() {
+    if (
+      batch.length === 0
+    ) {
+      return
+    }
+
+    const currentBatch =
+      batch
+
+    batch = []
+
     try {
       await prisma.$transaction(
-        batch.map(productData => prisma.product.create({ data: productData }))
+        currentBatch.map(
+          (
+            productData
+          ) =>
+            prisma.product.create({
+              data:
+                productData,
+            })
+        )
       )
-    } catch (err) {
-      console.error(`\n❌ Final batch insert failed:`, err)
-      for (const productData of batch) {
+
+      importedCount +=
+        currentBatch.length
+    } catch (error) {
+      console.warn(
+        '⚠️ Batch insert failed; retrying individually.'
+      )
+
+      for (
+        const productData
+        of currentBatch
+      ) {
         try {
-          await prisma.product.create({ data: productData })
-        } catch (innerErr) {
-          console.error(`Failed to create product "${productData.name}":`, innerErr)
+          await prisma.product.create({
+            data:
+              productData,
+          })
+
+          importedCount +=
+            1
+        } catch (
+          individualError
+        ) {
+          failedCount +=
+            1
+
+          console.error(
+            `❌ Failed: ${productData.name}`,
+            individualError
+          )
         }
       }
     }
+
+    process.stdout.write(
+      `\r📦 Imported ${importedCount} products`
+    )
   }
 
-  console.log(`\n✅ Import complete!`)
-  console.log(`   📦 Imported: ${importedCount} products`)
-  console.log(`   ⏭️  Skipped: ${skippedCount} rows`)  // 6. Create admin account
-  const adminEmail = 'admin@udrcrafts.com'
-  const adminPassword = await bcrypt.hash('Admin@123', 10)
-  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } })
-  if (!existingAdmin) {
-    await prisma.user.create({
-      data: {
-        firstName: 'Admin',
-        lastName: 'User',
-        email: adminEmail,
-        password: adminPassword,
-        role: 'ADMIN',
-        phone: '9999999990'
-      }
-    })
-    console.log('👤 Created admin account (admin@udrcrafts.com / Admin@123)')
-  } else {
-    console.log('👤 Admin account already exists')
-  }
+  for (
+    const record
+    of records
+  ) {
+    const name =
+      record.name
+        ?.trim()
 
-  // 7. Create a sample buyer for testing
-  const buyerEmail = 'buyer@udrcrafts.com'
-  const buyerPassword = await bcrypt.hash('Buyer@123', 10)
-  const existingBuyer = await prisma.user.findUnique({ where: { email: buyerEmail } })
-  if (!existingBuyer) {
-    await prisma.user.create({
-      data: {
-        firstName: 'Test',
-        lastName: 'Buyer',
-        email: buyerEmail,
-        password: buyerPassword,
-        role: 'CUSTOMER',
-        phone: '9999999991'
-      }
-    })
-    console.log('👤 Created test buyer (buyer@udrcrafts.com / Buyer@123)')
-  }
+    const price =
+      parsePrice(
+        record.price
+      )
 
-  console.log(`📊 Total in DB: ${await prisma.product.count()}`)
-}
+    if (
+      !name ||
+      price === null
+    ) {
+      invalidCount +=
+        1
 
-main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
-phone: '9999999990'
-      }
-    })
-console.log('👤 Created admin account (admin@udrcrafts.com / Admin@123)')
-  } else {
-  console.log('👤 Admin account already exists')
-}
-
-// 7. Create a sample buyer for testing
-const buyerEmail = 'buyer@udrcrafts.com'
-const buyerPassword = await bcrypt.hash('Buyer@123', 10)
-const existingBuyer = await prisma.user.findUnique({ where: { email: buyerEmail } })
-if (!existingBuyer) {
-  await prisma.user.create({
-    data: {
-      firstName: 'Test',
-      lastName: 'Buyer',
-      email: buyerEmail,
-      password: buyerPassword,
-      role: 'CUSTOMER',
-      phone: '9999999991'
+      continue
     }
-  })
-  console.log('👤 Created test buyer (buyer@udrcrafts.com / Buyer@123)')
+
+    const categoryName =
+      getTopCategory(
+        record.category
+      )
+
+    const categoryId =
+      categoryMap.get(
+        categoryName
+      )
+
+    if (!categoryId) {
+      invalidCount +=
+        1
+
+      continue
+    }
+
+    const brand =
+      record.brand
+        ?.trim() ||
+      'Unknown'
+
+    const etsyUrl =
+      record.url
+        ?.trim() ||
+      null
+
+    const duplicateKey =
+      createProductKey(
+        name,
+        brand,
+        price
+      )
+
+    if (
+      (
+        etsyUrl &&
+        existingUrls.has(
+          etsyUrl
+        )
+      ) ||
+      existingKeys.has(
+        duplicateKey
+      )
+    ) {
+      duplicateCount +=
+        1
+
+      continue
+    }
+
+    const sellerId =
+      sellerMap.get(
+        brand
+      ) ||
+      defaultSeller.id
+
+    const brandId =
+      brandIdMap.get(
+        brand
+      ) ||
+      null
+
+    const averageRating =
+      parseRating(
+        record.average_rating
+      )
+
+    const reviewsCount =
+      parseReviews(
+        record.reviews_count
+      )
+
+    const imageUrls =
+      splitImages(
+        record.images
+      )
+
+    const description =
+      cleanHtml(
+        record.description ||
+          record.product_details ||
+          name
+      )
+        .substring(
+          0,
+          4000
+        )
+
+    /**
+     * Simple popularity proxy for catalog sorting.
+     */
+    const popularity =
+      averageRating *
+      Math.log1p(
+        Math.max(
+          reviewsCount,
+          1
+        )
+      )
+
+    const productData = {
+      name,
+
+      description,
+
+      price,
+
+      currency:
+        record.currency
+          ?.trim() ||
+        'USD',
+
+      brand,
+
+      brandId,
+
+      averageRating,
+
+      reviewsCount,
+
+      etsyUrl,
+
+      inventory:
+        getInventory(
+          record.availability
+        ),
+
+      popularity,
+
+      sellerId,
+
+      categoryId,
+
+      tags: [
+        categoryName,
+        brand,
+      ].filter(
+        Boolean
+      ),
+
+      materials:
+        [],
+
+      images: {
+        create:
+          imageUrls.map(
+            (url) => ({
+              url,
+            })
+          ),
+      },
+    }
+
+    batch.push(
+      productData
+    )
+
+    /**
+     * Add to duplicate sets immediately so duplicate rows
+     * within the same CSV are also skipped.
+     */
+    existingKeys.add(
+      duplicateKey
+    )
+
+    if (etsyUrl) {
+      existingUrls.add(
+        etsyUrl
+      )
+    }
+
+    if (
+      batch.length >=
+      BATCH_SIZE
+    ) {
+      await flushBatch()
+    }
+  }
+
+  await flushBatch()
+
+  console.log('')
+  console.log('')
+  console.log(
+    '========================================'
+  )
+  console.log(
+    '✅ Etsy catalog import complete'
+  )
+  console.log(
+    '========================================'
+  )
+
+  console.log(
+    `Imported:   ${importedCount}`
+  )
+
+  console.log(
+    `Duplicates: ${duplicateCount}`
+  )
+
+  console.log(
+    `Invalid:    ${invalidCount}`
+  )
+
+  console.log(
+    `Failed:     ${failedCount}`
+  )
+
+  await ensureUsers()
+
+  const finalProductCount =
+    await prisma.product.count()
+
+  const finalCategoryCount =
+    await prisma.category.count()
+
+  const finalSellerCount =
+    await prisma.seller.count()
+
+  console.log('')
+  console.log(
+    'Database totals:'
+  )
+
+  console.log(
+    `Products:   ${finalProductCount}`
+  )
+
+  console.log(
+    `Categories: ${finalCategoryCount}`
+  )
+
+  console.log(
+    `Sellers:    ${finalSellerCount}`
+  )
+
+  if (
+    finalProductCount ===
+    0
+  ) {
+    throw new Error(
+      'Seed completed but Product table is still empty'
+    )
+  }
 }
 
-console.log(`📊 Total in DB: ${await prisma.product.count()}`)
-}
 
 main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+  .catch(
+    (error) => {
+      console.error('')
+      console.error(
+        '❌ Seed failed'
+      )
+
+      console.error(
+        error
+      )
+
+      process.exitCode =
+        1
+    }
+  )
+  .finally(
+    async () => {
+      await prisma.$disconnect()
+    }
+  )
