@@ -410,6 +410,8 @@ class User(Base):
     email = Column(String)
 
     role = Column(String)
+    cityId = Column(String, nullable=True)
+    stateId = Column(String, nullable=True)
 
 
 class Order(Base):

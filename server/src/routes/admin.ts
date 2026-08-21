@@ -220,8 +220,26 @@ router.get('/debug/buyer/:id', async (req, res) => {
       }
     });
 
-    res.json({ views, purchases, wishlist, searches, cart, returns });
+    const clicks = await prisma.userBehaviour.findMany({
+      where: { userId, eventType: 'CLICK' },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        product: { select: { name: true, category: { select: { name: true } } } }
+      }
+    });
+
+    res.json({
+      views,
+      purchases,
+      wishlist,
+      searches,
+      cart,
+      returns,
+      clicks
+    });
   } catch (error) {
+    console.error('Fetch buyer debug error:', error);
     res.status(500).json({ error: 'Failed to fetch buyer history' });
   }
 });

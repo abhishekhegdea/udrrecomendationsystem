@@ -50,6 +50,7 @@ import api, {
 import { useAbortSignal } from '@/hooks/useApiCall'
 
 import { getProductImageUrl } from '@/lib/utils'
+import { useGeolocation } from '@/hooks/useGeolocation'
 
 const ITEMS_PER_PAGE =
   24

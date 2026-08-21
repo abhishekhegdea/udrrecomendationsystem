@@ -169,6 +169,15 @@ export function ProductCard({
     )
   }
 
+  const handleProductClick = () => {
+    if (user) {
+      trackClick(user.id, product.id, {
+        source: 'product_card',
+        elementClicked: 'product_link'
+      })
+    }
+  }
+
   return (
     <Link
       to={`/product/${product.id}`}
