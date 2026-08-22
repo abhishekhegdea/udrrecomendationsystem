@@ -242,6 +242,9 @@ class Seller(Base):
         default=True,
     )
 
+    cityId = Column(String, nullable=True)
+    stateId = Column(String, nullable=True)
+
     cancelPenalty = Column(
         "cancelPenalty",
         Float,

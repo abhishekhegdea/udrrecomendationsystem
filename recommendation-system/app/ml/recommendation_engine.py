@@ -124,10 +124,13 @@ DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
     "trending": 30,
     "new_arrivals": 20,
     "category_affinity": 30,
+    "local_sellers": 20,
     "search_affinity": 15,
     "random_discovery": 10,
 }
 
+
+DEFAULT_LOCAL_SLOTS = 2  # Guaranteed slots for same-city products
 
 DEFAULT_MIN_RATING = 0.0
 
@@ -366,6 +369,9 @@ class EngineConfig:
 
     total_slots: int = 20
 
+    #: Number of slots guaranteed to same-city/state products (0 = off)
+    local_slots: int = DEFAULT_LOCAL_SLOTS
+
     include_random: bool = True
 
     user_location: Optional[str] = None
@@ -480,6 +486,36 @@ class CandidateGenerator:
             self.config.total_slots
             * 2
         )
+
+        # ------------------------------------------------------------------
+        # LOCAL SELLERS (queried first so they always enter the pool)
+        # ------------------------------------------------------------------
+        if self.config.user_city_id or self.config.user_state_id:
+            local_conditions = []
+            if self.config.user_city_id:
+                local_conditions.append(
+                    Seller.cityId == self.config.user_city_id
+                )
+            if self.config.user_state_id:
+                local_conditions.append(
+                    Seller.stateId == self.config.user_state_id
+                )
+            local_products = (
+                self.db.query(Product)
+                .options(joinedload(Product.images))
+                .join(Seller)
+                .filter(or_(*local_conditions))
+                .order_by(Product.popularity.desc())
+                .limit(limits["local_sellers"])
+                .all()
+            )
+            for p in local_products:
+                if p.id not in seen:
+                    seen.add(p.id)
+                    candidates.append((p, "local_sellers"))
+
+        if len(candidates) >= target_count:
+            return candidates
 
         # ------------------------------------------------------------------
         # CONTENT BASED
@@ -1079,6 +1115,7 @@ class FeatureComputer:
         "trending": 0.50,
         "new_arrivals": 0.50,
         "category_affinity": 0.55,
+        "local_sellers": 0.45,
         "search_affinity": 0.55,
         "random_discovery": 0.30,
     }
@@ -1262,7 +1299,7 @@ class FeatureComputer:
             )
 
             # Location
-            if self.config.user_location:
+            if self.config.user_city_id or self.config.user_state_id:
 
                 scored_product.location_boost = (
                     self
@@ -1461,10 +1498,13 @@ class FeatureComputer:
         product: Product,
     ) -> float:
 
-        # Existing project currently does not have working
-        # seller/user geography scoring here.
-
-        return 0.0
+        boost = 0.0
+        if product.seller:
+            if self.config.user_city_id and getattr(product.seller, 'cityId', None) == self.config.user_city_id:
+                boost = 0.20
+            elif self.config.user_state_id and getattr(product.seller, 'stateId', None) == self.config.user_state_id:
+                boost = 0.10
+        return boost
 
 
     def _compute_rating_score(
@@ -2428,13 +2468,62 @@ class BusinessRuleFilter:
                 scored_product
             )
 
-        return (
+        # Keep the full (pre-fairness) list so location-matched products
+        # can be re-inserted after ranking trims them out.
+        all_scored = list(scored)
+
+        final = (
             self
             ._apply_category_diversity_cap(
                 final_after_fairness
             )
         )
 
+        # Local-seller slot reservation
+        if (
+            self.config.local_slots > 0
+            and (self.config.user_city_id or self.config.user_state_id)
+        ):
+            final = self._reserve_local_slots(final, all_scored)
+
+        return final
+
+
+    def _reserve_local_slots(
+        self,
+        final: List[ScoredProduct],
+        pool: List[ScoredProduct],
+    ) -> List[ScoredProduct]:
+        """Guarantee up to ``config.local_slots`` same-city products survive
+        into the final ranking by swapping out the lowest-scoring
+        non-local products."""
+        if not final:
+            return final
+
+        locals_by_score = sorted(
+            (sp for sp in pool if sp.location_boost > 0),
+            key=lambda sp: sp.final_score,
+            reverse=True,
+        )
+        if not locals_by_score:
+            return final
+
+        final_ids = {sp.product.id for sp in final}
+        missing = [sp for sp in locals_by_score if sp.product.id not in final_ids]
+        need = min(self.config.local_slots, len(missing))
+        if need == 0:
+            return final
+
+        non_local = sorted(
+            (sp for sp in final if sp.location_boost <= 0),
+            key=lambda sp: sp.final_score,
+            reverse=True,
+        )
+        kept = non_local[: len(non_local) - need]
+        kept += [sp for sp in final if sp.location_boost > 0]
+        kept += missing[:need]
+        kept.sort(key=lambda sp: sp.final_score, reverse=True)
+        return kept
 
     def _get_purchased_product_ids(
         self,
