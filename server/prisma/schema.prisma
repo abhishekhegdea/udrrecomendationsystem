@@ -135,6 +135,8 @@ model Category {
   products      Product[]
   subcategories Subcategory[]
   userBehaviours UserBehaviour[]
+  brandId       String?
+  brand         Brand?         @relation(fields: [brandId], references: [id])
 }
 
 model Subcategory {
@@ -150,6 +152,12 @@ model Brand {
   name          String    @unique
   products      Product[]
   userBehaviours UserBehaviour[]
+  categories    Category[]
+  cartItems     CartItem[]
+  orders        Order[]
+  orderItems    OrderItem[]
+  clickEvents   ClickEvent[]
+  ratings       Rating[]
 }
 
 model Product {
@@ -223,6 +231,8 @@ model Order {
   deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
 
   items         OrderItem[]
+  brandId       String?
+  brand         Brand?      @relation(fields: [brandId], references: [id])
 }
 
 model OrderItem {
@@ -250,6 +260,9 @@ model OrderItem {
   returnReason  String?   // 'QUALITY', 'DAMAGED', 'MISTAKE', 'OTHER'
   returnReviewText String? // Private feedback captured at return time
   returnRating  Int?      // 1-5 rating given alongside the return
+
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
 }
 
 model Wishlist {
@@ -272,6 +285,8 @@ model CartItem {
   quantity      Int       @default(1)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
 
   @@unique([userId, productId])
 }
@@ -284,6 +299,8 @@ model Rating {
   productId     String
   product       Product   @relation(fields: [productId], references: [id])
   createdAt     DateTime  @default(now())
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
 }
 
 model Review {
@@ -317,6 +334,8 @@ model ClickEvent {
   product       Product   @relation(fields: [productId], references: [id])
   source        String?   // e.g., 'home_recommendation', 'search_results'
   createdAt     DateTime  @default(now())
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
 }
 
 // Short-lived click history used by the recommendation click-rate feature.

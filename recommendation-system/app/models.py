@@ -273,6 +273,12 @@ class Category(Base):
 
     name = Column(String)
 
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
+    )
+
     products = relationship(
         "Product",
         back_populates="category",
@@ -346,6 +352,12 @@ class ClickEvent(Base):
     createdAt = Column(
         DateTime,
         default=datetime.utcnow,
+    )
+
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
     )
 
 
@@ -430,6 +442,12 @@ class Order(Base):
         ForeignKey("User.id"),
     )
 
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
+    )
+
 
 class OrderItem(Base):
     __tablename__ = "OrderItem"
@@ -447,6 +465,12 @@ class OrderItem(Base):
     productId = Column(
         String,
         ForeignKey("Product.id"),
+    )
+
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
     )
 
 
