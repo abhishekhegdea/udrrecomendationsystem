@@ -52,6 +52,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false)
   // Mirror of items for use inside effects (avoids stale closures)
   const itemsRef = useRef<CartItem[]>([])
+  
+  // Watch for logout to clear the cart state so it doesn't leak into the next login
+  const previousUserRef = useRef(user?.id)
+  useEffect(() => {
+    // If we had a user before, and now we don't, it means a logout happened
+    if (previousUserRef.current && !user) {
+      setItems([])
+      localStorage.removeItem('udrcrafts_cart')
+    }
+    previousUserRef.current = user?.id
+  }, [user])
 
   // Load from local storage
   useEffect(() => {
