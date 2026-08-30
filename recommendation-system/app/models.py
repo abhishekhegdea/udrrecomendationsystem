@@ -634,7 +634,33 @@ class RecommendationRun(Base):
     algorithmVersion = Column(
         String,
         nullable=False,
-        default="personalized-click-v2",
+        default="personalized-click-location-dynamic-ltr-v5",
+    )
+
+    # User lifecycle segment used to resolve dynamic weights for this run.
+    userSegment = Column(
+        String,
+        nullable=False,
+        default="unknown",
+        index=True,
+    )
+
+    # static_weights / segment_prior_fallback / ltr_feature_importance
+    weightStrategy = Column(
+        String,
+        nullable=False,
+        default="static_weights",
+    )
+
+    # Offline ranker metadata used to produce the dynamic feature weights.
+    ltrModelVersion = Column(
+        String,
+        nullable=True,
+    )
+
+    ltrBackend = Column(
+        String,
+        nullable=True,
     )
 
     totalReturned = Column(

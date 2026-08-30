@@ -1,0 +1,45 @@
+{
+  "backend": "lightgbm",
+  "feature_importance": {
+    "brand_affinity": 0.00634160672841255,
+    "category_affinity": 0.0,
+    "click_rate": 0.0,
+    "collaborative": 0.0,
+    "content": 0.0,
+    "engagement": 0.016486651391438234,
+    "location": 0.6750381588304243,
+    "rating": 0.0,
+    "seasonal": 0.0,
+    "seller_freshness": 0.0018199364676792693,
+    "trending": 0.0,
+    "user_click_affinity": 0.3003136465820456
+  },
+  "feature_keys": [
+    "content",
+    "collaborative",
+    "trending",
+    "seasonal",
+    "location",
+    "category_affinity",
+    "brand_affinity",
+    "rating",
+    "seller_freshness",
+    "click_rate",
+    "user_click_affinity",
+    "engagement"
+  ],
+  "label_definition": {
+    "0": "no observed interaction",
+    "1": "click / product view",
+    "2": "wishlist",
+    "3": "cart",
+    "4": "purchase"
+  },
+  "model_file": "model.txt",
+  "model_version": "lightgbm-global-20260830T152229Z",
+  "positive_rows": 32,
+  "segment": "global",
+  "trained_at": "2026-08-30T15:22:29.879722Z",
+  "training_groups": 8,
+  "training_rows": 54
+}

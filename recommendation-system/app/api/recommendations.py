@@ -112,12 +112,27 @@ def _percentage(
     )
 
 
+def _resolved_weights(
+    weights=None,
+):
+    return (
+        weights
+        if isinstance(weights, dict) and weights
+        else PERSONALIZED_CLICK_WEIGHTS
+    )
+
+
 def _weight_percentage(
     key: str,
+    weights=None,
 ) -> float:
 
+    active_weights = _resolved_weights(
+        weights
+    )
+
     return _percentage(
-        PERSONALIZED_CLICK_WEIGHTS.get(
+        active_weights.get(
             key,
             0.0,
         )
@@ -127,14 +142,19 @@ def _weight_percentage(
 def _contribution(
     score: float,
     weight_key: str,
+    weights=None,
 ) -> float:
+
+    active_weights = _resolved_weights(
+        weights
+    )
 
     return (
         _safe_float(
             score
         )
         *
-        PERSONALIZED_CLICK_WEIGHTS.get(
+        active_weights.get(
             weight_key,
             0.0,
         )
@@ -144,12 +164,14 @@ def _contribution(
 def _contribution_percentage(
     score: float,
     weight_key: str,
+    weights=None,
 ) -> float:
 
     return _percentage(
         _contribution(
             score,
             weight_key,
+            weights,
         )
     )
 
@@ -232,6 +254,15 @@ def format_product(
         getattr(
             product,
             "seller",
+            None,
+        )
+    )
+
+
+    product_weights = _resolved_weights(
+        getattr(
+            product,
+            "dynamic_weights",
             None,
         )
     )
@@ -388,7 +419,7 @@ def format_product(
         "location_weight":
             round(
                 _safe_float(
-                    PERSONALIZED_CLICK_WEIGHTS.get(
+                    product_weights.get(
                         "location",
                         0.0,
                     )
@@ -398,7 +429,8 @@ def format_product(
 
         "location_weight_percentage":
             _weight_percentage(
-                "location"
+                "location",
+                product_weights,
             ),
 
         "location_contribution":
@@ -411,6 +443,7 @@ def format_product(
                     )
                 ),
                 "location",
+                product_weights,
             ),
 
         "location_contribution_percentage":
@@ -423,6 +456,7 @@ def format_product(
                     )
                 ),
                 "location",
+                product_weights,
             ),
 
         "seller_distance_km":
@@ -643,6 +677,61 @@ def get_home_recommendations(
             - recommendation_started
         )
         * 1000.0
+    )
+
+
+    # ========================================================
+    # DYNAMIC WEIGHT / LEARNING-TO-RANK CONTEXT
+    # ========================================================
+    first_result = (
+        results[0]
+        if results
+        else None
+    )
+
+    effective_weights = dict(
+        getattr(
+            first_result,
+            "effective_weights",
+            PERSONALIZED_CLICK_WEIGHTS,
+        )
+        or PERSONALIZED_CLICK_WEIGHTS
+    )
+
+    user_segment = getattr(
+        first_result,
+        "user_segment",
+        "unknown",
+    )
+
+    weight_strategy = getattr(
+        first_result,
+        "weight_strategy",
+        "static_weights",
+    )
+
+    ltr_model_version = getattr(
+        first_result,
+        "ltr_model_version",
+        None,
+    )
+
+    ltr_backend = getattr(
+        first_result,
+        "ltr_backend",
+        None,
+    )
+
+    ltr_model_source = getattr(
+        first_result,
+        "ltr_model_source",
+        None,
+    )
+
+    user_activity_profile = getattr(
+        first_result,
+        "user_activity_profile",
+        {},
     )
 
 
@@ -919,7 +1008,7 @@ def get_home_recommendations(
             calculate_score_breakdown(
                 scored_product,
                 weights=
-                    PERSONALIZED_CLICK_WEIGHTS,
+                    effective_weights,
             )
         )
 
@@ -986,7 +1075,7 @@ def get_home_recommendations(
             "location_weight":
                 round(
                     _safe_float(
-                        PERSONALIZED_CLICK_WEIGHTS.get(
+                        effective_weights.get(
                             "location",
                             0.0,
                         )
@@ -996,19 +1085,22 @@ def get_home_recommendations(
 
             "location_weight_percentage":
                 _weight_percentage(
-                    "location"
+                    "location",
+                    effective_weights,
                 ),
 
             "location_contribution":
                 _contribution(
                     location_score,
                     "location",
+                        effective_weights,
                 ),
 
             "location_contribution_percentage":
                 _contribution_percentage(
                     location_score,
                     "location",
+                        effective_weights,
                 ),
 
             "seller_distance_km":
@@ -1086,13 +1178,15 @@ def get_home_recommendations(
 
             "product_click_popularity_weight_percentage":
                 _weight_percentage(
-                    "click_rate"
+                    "click_rate",
+                    effective_weights,
                 ),
 
             "product_click_popularity_contribution_percentage":
                 _contribution_percentage(
                     click_popularity_score,
                     "click_rate",
+                        effective_weights,
                 ),
 
 
@@ -1113,13 +1207,15 @@ def get_home_recommendations(
 
             "click_rate_weight_percentage":
                 _weight_percentage(
-                    "click_rate"
+                    "click_rate",
+                    effective_weights,
                 ),
 
             "click_rate_contribution_percentage":
                 _contribution_percentage(
                     click_popularity_score,
                     "click_rate",
+                        effective_weights,
                 ),
 
 
@@ -1140,13 +1236,15 @@ def get_home_recommendations(
 
             "user_click_affinity_weight_percentage":
                 _weight_percentage(
-                    "user_click_affinity"
+                    "user_click_affinity",
+                    effective_weights,
                 ),
 
             "user_click_affinity_contribution_percentage":
                 _contribution_percentage(
                     user_click_affinity_score,
                     "user_click_affinity",
+                        effective_weights,
                 ),
 
 
@@ -1254,72 +1352,84 @@ def get_home_recommendations(
                     _contribution_percentage(
                         content_score,
                         "content",
+                        effective_weights,
                     ),
 
                 "collaborative":
                     _contribution_percentage(
                         collab_score,
                         "collaborative",
+                        effective_weights,
                     ),
 
                 "trending":
                     _contribution_percentage(
                         trend_score,
                         "trending",
+                        effective_weights,
                     ),
 
                 "seasonal":
                     _contribution_percentage(
                         seasonal_score,
                         "seasonal",
+                        effective_weights,
                     ),
 
                 "location":
                     _contribution_percentage(
                         location_score,
                         "location",
+                        effective_weights,
                     ),
 
                 "category_affinity":
                     _contribution_percentage(
                         category_score,
                         "category_affinity",
+                        effective_weights,
                     ),
 
                 "brand_affinity":
                     _contribution_percentage(
                         brand_score,
                         "brand_affinity",
+                        effective_weights,
                     ),
 
                 "rating":
                     _contribution_percentage(
                         rating_score,
                         "rating",
+                        effective_weights,
                     ),
 
                 "seller_freshness":
                     _contribution_percentage(
                         seller_score,
                         "seller_freshness",
+                        effective_weights,
                     ),
 
                 "product_click_popularity":
                     _contribution_percentage(
                         click_popularity_score,
                         "click_rate",
+                        effective_weights,
                     ),
 
                 "user_click_affinity":
                     _contribution_percentage(
                         user_click_affinity_score,
                         "user_click_affinity",
+                        effective_weights,
                     ),
 
                 "engagement":
                     _contribution_percentage(
                         engagement_score,
                         "engagement",
+                        effective_weights,
                     ),
             },
 
@@ -1452,6 +1562,13 @@ def get_home_recommendations(
 
         setattr(
             product,
+            "dynamic_weights",
+            dict(effective_weights),
+        )
+
+
+        setattr(
+            product,
             "score_details",
             score_details,
         )
@@ -1489,7 +1606,15 @@ def get_home_recommendations(
                 execution_time_ms=
                     execution_time_ms,
                 weights=
-                    PERSONALIZED_CLICK_WEIGHTS,
+                    effective_weights,
+                user_segment=
+                    user_segment,
+                weight_strategy=
+                    weight_strategy,
+                ltr_model_version=
+                    ltr_model_version,
+                ltr_backend=
+                    ltr_backend,
                 algorithm_version=
                     ALGORITHM_VERSION,
             )
@@ -1551,6 +1676,21 @@ def get_home_recommendations(
             ),
 
 
+        # ----------------------------------------------------
+        # DYNAMIC WEIGHT / LEARNING-TO-RANK CONTEXT
+        # ----------------------------------------------------
+        "user_segment":
+            user_segment,
+
+        "dynamic_weighting": {
+            "strategy": weight_strategy,
+            "ltr_backend": ltr_backend,
+            "ltr_model_version": ltr_model_version,
+            "ltr_model_source": ltr_model_source,
+            "activity_profile": user_activity_profile,
+        },
+
+
         "location_context": {
             "latitude":
                 user_latitude,
@@ -1558,7 +1698,8 @@ def get_home_recommendations(
                 user_longitude,
             "location_weight_percentage":
                 _weight_percentage(
-                    "location"
+                    "location",
+                    effective_weights,
                 ),
             "nearby_ranking_enabled":
                 (
@@ -1575,12 +1716,14 @@ def get_home_recommendations(
 
         "product_click_popularity_weight_percentage":
             _weight_percentage(
-                "click_rate"
+                "click_rate",
+                effective_weights,
             ),
 
         "user_click_affinity_weight_percentage":
             _weight_percentage(
-                "user_click_affinity"
+                "user_click_affinity",
+                effective_weights,
             ),
 
         "weights_percentage": {
@@ -1593,7 +1736,7 @@ def get_home_recommendations(
             for (
                 key,
                 value,
-            ) in PERSONALIZED_CLICK_WEIGHTS.items()
+            ) in effective_weights.items()
         },
 
         "recommendations":

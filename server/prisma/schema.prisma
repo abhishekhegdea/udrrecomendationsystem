@@ -468,18 +468,30 @@ model FairnessConfig {
 // One row per recommendation request. The detailed per-product scores are
 // stored in RecommendationScoreSnapshot rows linked through runId.
 model RecommendationRun {
-  id               String   @id @default(uuid())
+  id               String @id @default(uuid())
   userId           String
-  context          String   @default("home")
-  algorithmVersion String   @default("personalized-click-v2")
-  totalReturned    Int      @default(0)
-  executionTimeMs  Float    @default(0)
-  weights          Json
-  createdAt        DateTime @default(now())
+  context          String @default("home")
+  algorithmVersion String @default("personalized-click-location-dynamic-ltr-v5")
+
+  // Dynamic-weight / Learning-to-Rank audit metadata.
+  userSegment     String  @default("unknown")
+  weightStrategy  String  @default("static_weights")
+  ltrModelVersion String?
+  ltrBackend      String?
+
+  totalReturned   Int   @default(0)
+  executionTimeMs Float @default(0)
+
+  // Exact normalized feature weights used by this recommendation run.
+  // This becomes dynamic for NEW / ACTIVE / RETURNING users.
+  weights Json
+
+  createdAt DateTime @default(now())
 
   snapshots RecommendationScoreSnapshot[]
 
   @@index([userId, createdAt])
+  @@index([userSegment, createdAt])
   @@index([createdAt])
 }
 
