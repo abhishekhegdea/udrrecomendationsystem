@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  db:
+    image: ankane/pgvector:latest
+    container_name: udrcrafts-db
+    environment:
+      POSTGRES_USER: udr
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: udrcrafts
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/prisma/schema.prisma:/docker-entrypoint-initdb.d/schema.prisma
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: udrcrafts-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

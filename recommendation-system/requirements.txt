@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy
+psycopg2-binary
+pydantic
+pydantic-settings
+alembic
+pgvector
+sentence-transformers
+celery
+redis
+python-dotenv
+scikit-learn
+pandas
+scipy
