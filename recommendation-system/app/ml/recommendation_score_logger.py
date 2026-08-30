@@ -62,7 +62,7 @@ from app.models import (
 # CONFIGURATION
 # ============================================================
 
-ALGORITHM_VERSION = "personalized-click-v2"
+ALGORITHM_VERSION = "personalized-click-location-score-v4"
 
 # Recommendation score history is useful for debugging and comparison, but a
 # home-page recommendation call can happen very frequently.  Retaining the
@@ -562,6 +562,41 @@ def persist_recommendation_run(
             ),
             locationScore=_safe_float(
                 raw["location"]
+            ),
+            locationWeight=_safe_float(
+                breakdown["weights"].get(
+                    "location",
+                    0.0,
+                )
+            ),
+            sellerDistanceKm=(
+                _safe_float(
+                    getattr(
+                        scored_product,
+                        "seller_distance_km",
+                        None,
+                    )
+                )
+                if getattr(
+                    scored_product,
+                    "seller_distance_km",
+                    None,
+                ) is not None
+                else None
+            ),
+            nearbySeller=bool(
+                getattr(
+                    scored_product,
+                    "nearby_seller",
+                    False,
+                )
+            ),
+            locationPriorityApplied=bool(
+                getattr(
+                    scored_product,
+                    "location_priority_applied",
+                    False,
+                )
             ),
             categoryAffinityScore=_safe_float(
                 raw["category_affinity"]

@@ -80,18 +80,23 @@ CLICK_AFFINITY_CANDIDATES_PER_SEED = 10
 # User Click Affinity is a new independent personalised KPI.
 
 PERSONALIZED_CLICK_WEIGHTS: Dict[str, float] = {
-    "content": 0.14,
-    "collaborative": 0.11,
-    "trending": 0.10,
-    "seasonal": 0.07,
-    "location": 0.04,
+    "content": 0.12,
+    "collaborative": 0.10,
+    "trending": 0.08,
+    "seasonal": 0.06,
+
+    # Location is now part of the actual recommendation score at 10%.
+    # location_score = exp(-seller_distance_km / distance_decay_km)
+    # location_contribution = location_score * 0.10
+    "location": 0.10,
+
     "category_affinity": 0.08,
     "brand_affinity": 0.07,
     "rating": 0.07,
-    "seller_freshness": 0.06,
+    "seller_freshness": 0.05,
     "click_rate": 0.04,
     "user_click_affinity": 0.10,
-    "engagement": 0.12,
+    "engagement": 0.13,
 }
 
 
@@ -1939,6 +1944,22 @@ class ClickAwareRankerSelector(
         sp: ScoredProduct,
     ) -> str:
 
+        if (
+            getattr(
+                sp,
+                "location_priority_applied",
+                False,
+            )
+            and getattr(
+                sp,
+                "seller_distance_km",
+                None,
+            ) is not None
+        ):
+            return (
+                f"Nearby seller — {sp.seller_distance_km:.1f} km away."
+            )
+
         affinity = float(
 
             getattr(
@@ -2006,6 +2027,8 @@ class ClickPersonalizedRecommendationEngine:
         user_location: Optional[str] = None,
         user_city_id: Optional[str] = None,
         user_state_id: Optional[str] = None,
+        user_latitude: Optional[float] = None,
+        user_longitude: Optional[float] = None,
         weights: Optional[
             Dict[
                 str,
@@ -2049,6 +2072,12 @@ class ClickPersonalizedRecommendationEngine:
 
             user_state_id=
                 user_state_id,
+
+            user_latitude=
+                user_latitude,
+
+            user_longitude=
+                user_longitude,
 
             **rule_overrides,
         )
@@ -2142,7 +2171,8 @@ class ClickPersonalizedRecommendationEngine:
 
         selector = (
             ClickAwareRankerSelector(
-                config.total_slots
+                config.total_slots,
+                config=config,
             )
         )
 
@@ -2166,6 +2196,8 @@ def get_recommendations_from_click_events(
     user_location: Optional[str] = None,
     user_city_id: Optional[str] = None,
     user_state_id: Optional[str] = None,
+    user_latitude: Optional[float] = None,
+    user_longitude: Optional[float] = None,
     weights: Optional[
         Dict[
             str,
@@ -2200,6 +2232,12 @@ def get_recommendations_from_click_events(
 
         user_state_id=
             user_state_id,
+
+        user_latitude=
+            user_latitude,
+
+        user_longitude=
+            user_longitude,
 
         weights=
             weights,

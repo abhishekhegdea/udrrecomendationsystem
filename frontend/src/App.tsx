@@ -12,8 +12,14 @@ import { ProfilePage } from '@/pages/Profile'
 import { DocumentsPage } from '@/pages/Documents'
 import { SettingsPage } from '@/pages/Settings'
 import type { ReactNode } from 'react'
+import { useGeolocation } from '@/hooks/useGeolocation'
 
 const queryClient = new QueryClient()
+
+function LocationTracker() {
+  useGeolocation()
+  return null
+}
 
 function ProtectedRoute({ children, allowedRoles }: { children: ReactNode, allowedRoles?: string[] }) {
   const { isAuthenticated, user } = useAuth()
@@ -140,6 +146,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
+          <LocationTracker />
           <CartProvider>
             <WishlistProvider>
               <ThemeProvider defaultTheme="light" storageKey="udrcrafts-theme">

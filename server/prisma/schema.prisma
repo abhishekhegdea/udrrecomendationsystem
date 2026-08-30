@@ -9,21 +9,29 @@ datasource db {
 // --- CORE ENTITIES ---
 
 model User {
-  id               String           @id @default(uuid())
-  firstName        String
-  lastName         String
-  email            String           @unique
-  phone            String?          @unique
-  password         String
-  role             String           @default("CUSTOMER") // CUSTOMER, ADMIN
-  profileImage     String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id           String   @id @default(uuid())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  phone        String?  @unique
+  password     String
+  role         String   @default("CUSTOMER") // CUSTOMER, ADMIN
+  profileImage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  stateId          String?
-  state            State?           @relation(fields: [stateId], references: [id])
-  cityId           String?
-  city             City?            @relation(fields: [cityId], references: [id])
+  stateId String?
+  state   State?  @relation(fields: [stateId], references: [id])
+  cityId  String?
+  city    City?   @relation(fields: [cityId], references: [id])
+
+  // Precise coordinates used for nearby-seller recommendations.
+  // The API key is never stored here; only the resolved location is persisted.
+  latitude          Float?
+  longitude         Float?
+  locationAccuracy  Float?
+  locationAddress   String?
+  locationUpdatedAt DateTime?
 
   orders           Order[]
   wishlist         Wishlist[]
@@ -37,49 +45,60 @@ model User {
   sessions         UserSession[]
   userBehaviours   UserBehaviour[]
   interests        CustomerInterest[]
+
+  @@index([latitude, longitude])
 }
 
 model Seller {
-  id               String     @id @default(uuid())
-  firstName        String
-  lastName         String
-  email            String     @unique
-  phone            String     @unique
-  password         String
-  businessName     String?
-  gstNumber        String?
-  status           String     @default("PENDING") // VERIFIED, PENDING, REJECTED
-  profileImage     String?
-  rating           Float      @default(0)
-  earnings         Float      @default(0)
-  dateJoined       DateTime   @default(now())
-  isNewSeller      Boolean    @default(true) // Used for 15% fairness promotion
+  id           String   @id @default(uuid())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  phone        String   @unique
+  password     String
+  businessName String?
+  gstNumber    String?
+  status       String   @default("PENDING") // VERIFIED, PENDING, REJECTED
+  profileImage String?
+  rating       Float    @default(0)
+  earnings     Float    @default(0)
+  dateJoined   DateTime @default(now())
+  isNewSeller  Boolean  @default(true) // Used for 15% fairness promotion
 
   // Seller KYC & Financials
-  bankAccount      String?
-  ifscCode         String?
-  upiId            String?
-  panNumber        String?
-  aadhaarNumber    String?
-  documents        String[] // URLs to uploaded documents
+  bankAccount   String?
+  ifscCode      String?
+  upiId         String?
+  panNumber     String?
+  aadhaarNumber String?
+  documents     String[] // URLs to uploaded documents
 
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  stateId          String?
-  state            State?     @relation(fields: [stateId], references: [id])
-  cityId           String?
-  city             City?      @relation(fields: [cityId], references: [id])
+  stateId String?
+  state   State?  @relation(fields: [stateId], references: [id])
+  cityId  String?
+  city    City?   @relation(fields: [cityId], references: [id])
 
-  products         Product[]
-  sellerScores     SellerScore[]
-  userBehaviours   UserBehaviour[]
+  // Seller coordinates are used to calculate real distance from the shopper.
+  latitude          Float?
+  longitude         Float?
+  locationAccuracy  Float?
+  locationAddress   String?
+  locationUpdatedAt DateTime?
+
+  products       Product[]
+  sellerScores   SellerScore[]
+  userBehaviours UserBehaviour[]
 
   // Cancellation penalty tracking
-  cancelPenalty    Float      @default(0) // Cumulative negative score for cancellations
+  cancelPenalty Float @default(0) // Cumulative negative score for cancellations
 
   // Quality-return penalty tracking
-  returnPenalty    Float      @default(0) // Cumulative negative score for quality-issue returns
+  returnPenalty Float @default(0) // Cumulative negative score for quality-issue returns
+
+  @@index([latitude, longitude])
 }
 
 model DeliveryPartner {
@@ -110,232 +129,232 @@ model DeliveryPartner {
   vehicleNumber          String?
   dateOfBirth            String?
   gender                 String?
-  
+
   // Partner KYC, Vehicle Documents & Financials
-  aadhaarNumber          String?
-  panNumber              String?
-  drivingLicense         String?
-  rcBook                 String?
-  vehicleInsurance       String?
-  bankAccount            String?
-  ifscCode               String?
-  upiId                  String?
-  
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  orders                 Order[]
+  aadhaarNumber    String?
+  panNumber        String?
+  drivingLicense   String?
+  rcBook           String?
+  vehicleInsurance String?
+  bankAccount      String?
+  ifscCode         String?
+  upiId            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
 }
 
 // --- PRODUCT CATALOG ---
 
 model Category {
-  id            String         @id @default(uuid())
-  name          String         @unique
-  description   String?
-  products      Product[]
-  subcategories Subcategory[]
+  id             String          @id @default(uuid())
+  name           String          @unique
+  description    String?
+  products       Product[]
+  subcategories  Subcategory[]
   userBehaviours UserBehaviour[]
-  brandId       String?
-  brand         Brand?         @relation(fields: [brandId], references: [id])
+  brandId        String?
+  brand          Brand?          @relation(fields: [brandId], references: [id])
 }
 
 model Subcategory {
-  id            String    @id @default(uuid())
-  name          String
-  categoryId    String
-  category      Category  @relation(fields: [categoryId], references: [id])
-  products      Product[]
+  id         String    @id @default(uuid())
+  name       String
+  categoryId String
+  category   Category  @relation(fields: [categoryId], references: [id])
+  products   Product[]
 }
 
 model Brand {
-  id            String    @id @default(uuid())
-  name          String    @unique
-  products      Product[]
+  id             String          @id @default(uuid())
+  name           String          @unique
+  products       Product[]
   userBehaviours UserBehaviour[]
-  categories    Category[]
-  cartItems     CartItem[]
-  orders        Order[]
-  orderItems    OrderItem[]
-  clickEvents   ClickEvent[]
-  ratings       Rating[]
+  categories     Category[]
+  cartItems      CartItem[]
+  orders         Order[]
+  orderItems     OrderItem[]
+  clickEvents    ClickEvent[]
+  ratings        Rating[]
 }
 
 model Product {
-  id            String    @id @default(uuid())
-  name          String
-  description   String
-  price         Float
-  discount      Float     @default(0)
-  craftType     String?
-  inventory     Int       @default(0)
-  popularity    Float     @default(0)
-  tags          String[]
-  materials     String[]
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  price       Float
+  discount    Float    @default(0)
+  craftType   String?
+  inventory   Int      @default(0)
+  popularity  Float    @default(0)
+  tags        String[]
+  materials   String[]
 
   // Etsy CSV fields
-  averageRating Float     @default(0)
-  reviewsCount  Int       @default(0)
+  averageRating Float   @default(0)
+  reviewsCount  Int     @default(0)
   etsyUrl       String?
   brand         String?
-  currency      String    @default("USD")
+  currency      String  @default("USD")
 
   // Embeddings for pgvector (Sentence Transformers usually output 384 or 768 dims, using 384)
-  embedding     Unsupported("vector(384)")?
+  embedding Unsupported("vector(384)")?
 
-  sellerId      String
-  seller        Seller    @relation(fields: [sellerId], references: [id])
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id])
 
-  categoryId    String
-  category      Category  @relation(fields: [categoryId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
 
   subcategoryId String?
   subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id])
 
   brandId       String?
-  brandRelation Brand?       @relation(fields: [brandId], references: [id])
+  brandRelation Brand?  @relation(fields: [brandId], references: [id])
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  images        ProductImage[]
-  orderItems    OrderItem[]
-  wishlist      Wishlist[]
-  cartItems     CartItem[]
-  ratings       Rating[]
-  reviews       Review[]
-  views         ProductView[]
-  clicks        ClickEvent[]
+  images           ProductImage[]
+  orderItems       OrderItem[]
+  wishlist         Wishlist[]
+  cartItems        CartItem[]
+  ratings          Rating[]
+  reviews          Review[]
+  views            ProductView[]
+  clicks           ClickEvent[]
   clickRateHistory ProductClickHistory[]
-  userBehaviours UserBehaviour[]
+  userBehaviours   UserBehaviour[]
 }
 
 model ProductImage {
-  id            String   @id @default(uuid())
-  url           String   // Storing path/URL, not raw bytes
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  url       String // Storing path/URL, not raw bytes
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 // --- COMMERCE & INTERACTIONS ---
 
 model Order {
-  id            String      @id @default(uuid())
-  userId        String
-  user          User        @relation(fields: [userId], references: [id])
-  totalAmount   Float
-  status        String      @default("PENDING") // PENDING, CONFIRMED, SHIPPED, DELIVERED
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  totalAmount Float
+  status      String   @default("PENDING") // PENDING, CONFIRMED, SHIPPED, DELIVERED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   deliveryPartnerId String?
   deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
 
-  items         OrderItem[]
-  brandId       String?
-  brand         Brand?      @relation(fields: [brandId], references: [id])
+  items   OrderItem[]
+  brandId String?
+  brand   Brand?      @relation(fields: [brandId], references: [id])
 }
 
 model OrderItem {
-  id            String    @id @default(uuid())
-  orderId       String
-  order         Order     @relation(fields: [orderId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  quantity      Int
-  priceAtBuy    Float
+  id         String  @id @default(uuid())
+  orderId    String
+  order      Order   @relation(fields: [orderId], references: [id])
+  productId  String
+  product    Product @relation(fields: [productId], references: [id])
+  quantity   Int
+  priceAtBuy Float
 
   // Audit reference to the persisted CartItem row this order item was
   // created from. Plain nullable string (no FK) so the reference survives
   // even after the cart row is consumed/deleted at checkout.
-  cartItemId    String?
+  cartItemId String?
 
   // Cancellation tracking
-  cancelled     Boolean   @default(false)
-  cancelledAt   DateTime?
-  cancelledBy   String?   // 'SELLER', 'CUSTOMER', 'ADMIN'
+  cancelled   Boolean   @default(false)
+  cancelledAt DateTime?
+  cancelledBy String? // 'SELLER', 'CUSTOMER', 'ADMIN'
 
   // Return tracking
-  returned      Boolean   @default(false)
-  returnedAt    DateTime?
-  returnReason  String?   // 'QUALITY', 'DAMAGED', 'MISTAKE', 'OTHER'
+  returned         Boolean   @default(false)
+  returnedAt       DateTime?
+  returnReason     String? // 'QUALITY', 'DAMAGED', 'MISTAKE', 'OTHER'
   returnReviewText String? // Private feedback captured at return time
-  returnRating  Int?      // 1-5 rating given alongside the return
+  returnRating     Int? // 1-5 rating given alongside the return
 
-  brandId       String?
-  brand         Brand?    @relation(fields: [brandId], references: [id])
+  brandId String?
+  brand   Brand?  @relation(fields: [brandId], references: [id])
 }
 
 model Wishlist {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  createdAt     DateTime  @default(now())
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
 
   @@unique([userId, productId])
 }
 
 model CartItem {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  quantity      Int       @default(1)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  brandId       String?
-  brand         Brand?    @relation(fields: [brandId], references: [id])
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brandId   String?
+  brand     Brand?   @relation(fields: [brandId], references: [id])
 
   @@unique([userId, productId])
 }
 
 model Rating {
-  id            String    @id @default(uuid())
-  value         Int       // 1 to 5
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  createdAt     DateTime  @default(now())
-  brandId       String?
-  brand         Brand?    @relation(fields: [brandId], references: [id])
+  id        String   @id @default(uuid())
+  value     Int // 1 to 5
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+  brandId   String?
+  brand     Brand?   @relation(fields: [brandId], references: [id])
 }
 
 model Review {
-  id            String    @id @default(uuid())
-  text          String
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  createdAt     DateTime  @default(now())
+  id        String   @id @default(uuid())
+  text      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
 }
 
 // --- USER BEHAVIOUR & ML SIGNALS ---
 
 model ProductView {
-  id            String    @id @default(uuid())
-  userId        String?   // Null if guest
-  user          User?     @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  timeSpent     Int?      // In seconds
-  scrollDepth   Int?      // Percentage
-  createdAt     DateTime  @default(now())
+  id          String   @id @default(uuid())
+  userId      String? // Null if guest
+  user        User?    @relation(fields: [userId], references: [id])
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  timeSpent   Int? // In seconds
+  scrollDepth Int? // Percentage
+  createdAt   DateTime @default(now())
 }
 
 model ClickEvent {
-  id            String    @id @default(uuid())
-  userId        String?
-  user          User?     @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-  source        String?   // e.g., 'home_recommendation', 'search_results'
-  createdAt     DateTime  @default(now())
-  brandId       String?
-  brand         Brand?    @relation(fields: [brandId], references: [id])
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  source    String? // e.g., 'home_recommendation', 'search_results'
+  createdAt DateTime @default(now())
+  brandId   String?
+  brand     Brand?   @relation(fields: [brandId], references: [id])
 }
 
 // Short-lived click history used by the recommendation click-rate feature.
@@ -356,95 +375,93 @@ model ProductClickHistory {
 }
 
 model SearchHistory {
-  id            String    @id @default(uuid())
-  userId        String?
-  user          User?     @relation(fields: [userId], references: [id])
-  query         String
-  createdAt     DateTime  @default(now())
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  query     String
+  createdAt DateTime @default(now())
 }
 
 model UserSession {
-  id            String    @id @default(uuid())
-  userId        String?
-  user          User?     @relation(fields: [userId], references: [id])
-  duration      Int?      // Session duration in seconds
-  startedAt     DateTime  @default(now())
-  endedAt       DateTime?
+  id        String    @id @default(uuid())
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+  duration  Int? // Session duration in seconds
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
 }
 
 model UserBehaviour {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  eventType     String    // PRODUCT_VIEW, SEARCH, CLICK, WISHLIST, CART, PURCHASE, REVIEW, RATING
-  productId     String?
-  product       Product?  @relation(fields: [productId], references: [id])
-  categoryId    String?
-  category      Category? @relation(fields: [categoryId], references: [id])
-  sellerId      String?
-  seller        Seller?   @relation(fields: [sellerId], references: [id])
-  brandId       String?
-  brand         Brand?    @relation(fields: [brandId], references: [id])
-  source        String?   // Page/component where the event originated
-  metadata      Json?
-  createdAt     DateTime  @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  eventType  String // PRODUCT_VIEW, SEARCH, CLICK, WISHLIST, CART, PURCHASE, REVIEW, RATING
+  productId  String?
+  product    Product?  @relation(fields: [productId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  sellerId   String?
+  seller     Seller?   @relation(fields: [sellerId], references: [id])
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  source     String? // Page/component where the event originated
+  metadata   Json?
+  createdAt  DateTime  @default(now())
 }
 
 model CustomerInterest {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  interest      String    // e.g., "Handmade Pottery"
-  weight        Float     @default(1.0)
+  id       String @id @default(uuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  interest String // e.g., "Handmade Pottery"
+  weight   Float  @default(1.0)
 }
 
 // --- RECOMMENDATION METRICS ---
 
 model RecommendationLog {
-  id            String    @id @default(uuid())
-  userId        String
+  id             String   @id @default(uuid())
+  userId         String
   recommendedIds String[] // Array of Product IDs shown
-  context       String    // e.g., 'home_page', 'cart_upsell'
-  clickedIds    String[]  // Array of Product IDs clicked from this recommendation
-  createdAt     DateTime  @default(now())
+  context        String // e.g., 'home_page', 'cart_upsell'
+  clickedIds     String[] // Array of Product IDs clicked from this recommendation
+  createdAt      DateTime @default(now())
 }
 
 model TrendingScore {
-  id            String    @id @default(uuid())
-  productId     String    @unique
-  score         Float     @default(0)
-  updatedAt     DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  productId String   @unique
+  score     Float    @default(0)
+  updatedAt DateTime @updatedAt
 }
 
 model SeasonalScore {
-  id            String    @id @default(uuid())
-  productId     String
-  season        String    // e.g., "Diwali", "Christmas"
-  score         Float     @default(0)
-  updatedAt     DateTime  @updatedAt
-  
+  id        String   @id @default(uuid())
+  productId String
+  season    String // e.g., "Diwali", "Christmas"
+  score     Float    @default(0)
+  updatedAt DateTime @updatedAt
+
   @@unique([productId, season])
 }
 
 model SellerScore {
-  id            String    @id @default(uuid())
-  sellerId      String    @unique
-  seller        Seller    @relation(fields: [sellerId], references: [id])
-  score         Float     @default(0)
-  updatedAt     DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  sellerId  String   @unique
+  seller    Seller   @relation(fields: [sellerId], references: [id])
+  score     Float    @default(0)
+  updatedAt DateTime @updatedAt
 }
 
 model FairnessConfig {
-  id                  Int       @id @default(autoincrement())
-  boostAmount         Float     @default(0.15)        @map("boost_amount")
-  newSellerRatio      Float     @default(0.15)        @map("new_seller_ratio")
-  maxPerSellerRatio   Float     @default(0.20)        @map("max_per_seller_ratio")
-  updatedAt           DateTime  @updatedAt             @map("updated_at")
+  id                Int      @id @default(autoincrement())
+  boostAmount       Float    @default(0.15) @map("boost_amount")
+  newSellerRatio    Float    @default(0.15) @map("new_seller_ratio")
+  maxPerSellerRatio Float    @default(0.20) @map("max_per_seller_ratio")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("FairnessConfig")
 }
-
-
 
 // --- RECOMMENDATION SCORE AUDIT ---
 
@@ -469,9 +486,9 @@ model RecommendationRun {
 // Complete auditable score breakdown for one product in one recommendation
 // run. Score/contribution fields are stored as decimals in the 0..1 scale.
 model RecommendationScoreSnapshot {
-  id      String @id @default(uuid())
-  runId   String
-  run     RecommendationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id    String            @id @default(uuid())
+  runId String
+  run   RecommendationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   userId      String
   productId   String
@@ -480,28 +497,34 @@ model RecommendationScoreSnapshot {
   source      String?
 
   // Raw recommendation feature scores
-  contentScore                Float @default(0)
-  collaborativeScore          Float @default(0)
-  trendingScore               Float @default(0)
-  seasonalScore               Float @default(0)
-  locationScore               Float @default(0)
-  categoryAffinityScore       Float @default(0)
-  brandAffinityScore          Float @default(0)
-  ratingScore                 Float @default(0)
-  sellerFreshnessScore        Float @default(0)
-  productClickPopularityScore Float @default(0)
-  userClickAffinityScore      Float @default(0)
-  engagementScore             Float @default(0)
+  contentScore                Float   @default(0)
+  collaborativeScore          Float   @default(0)
+  trendingScore               Float   @default(0)
+  seasonalScore               Float   @default(0)
+  locationScore               Float   @default(0)
+  // Exact normalized weight used in this recommendation run.
+  // locationContribution = locationScore * locationWeight.
+  locationWeight              Float   @default(0)
+  sellerDistanceKm            Float?
+  nearbySeller                Boolean @default(false)
+  locationPriorityApplied     Boolean @default(false)
+  categoryAffinityScore       Float   @default(0)
+  brandAffinityScore          Float   @default(0)
+  ratingScore                 Float   @default(0)
+  sellerFreshnessScore        Float   @default(0)
+  productClickPopularityScore Float   @default(0)
+  userClickAffinityScore      Float   @default(0)
+  engagementScore             Float   @default(0)
 
   // Click diagnostics
-  productClicks7d      Int   @default(0)
+  productClicks7d     Int   @default(0)
   productClicksPerDay Float @default(0)
 
   // Internal user-click-affinity components
-  semanticSimilarityScore    Float @default(0)
-  clickCategoryScore         Float @default(0)
-  clickBrandScore            Float @default(0)
-  clickFrequencyRecencyScore Float @default(0)
+  semanticSimilarityScore    Float   @default(0)
+  clickCategoryScore         Float   @default(0)
+  clickBrandScore            Float   @default(0)
+  clickFrequencyRecencyScore Float   @default(0)
   matchedClickedProductId    String?
   matchedClickedProductName  String?
 
@@ -537,32 +560,32 @@ model RecommendationScoreSnapshot {
 // --- LOCATION DATA ---
 
 model Country {
-  id            String    @id @default(uuid())
-  name          String    @unique
-  states        State[]
+  id     String  @id @default(uuid())
+  name   String  @unique
+  states State[]
 }
 
 model State {
-  id            String    @id @default(uuid())
-  name          String
-  countryId     String
-  country       Country   @relation(fields: [countryId], references: [id])
-  cities        City[]
-  users         User[]
-  sellers       Seller[]
+  id        String   @id @default(uuid())
+  name      String
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  cities    City[]
+  users     User[]
+  sellers   Seller[]
 }
 
 model City {
-  id            String    @id @default(uuid())
-  name          String
-  stateId       String
-  state         State     @relation(fields: [stateId], references: [id])
-  users         User[]
-  sellers       Seller[]
+  id      String   @id @default(uuid())
+  name    String
+  stateId String
+  state   State    @relation(fields: [stateId], references: [id])
+  users   User[]
+  sellers Seller[]
 }
 
 model Language {
-  id            String    @id @default(uuid())
-  code          String    @unique // e.g., 'en', 'hi'
-  name          String
+  id   String @id @default(uuid())
+  code String @unique // e.g., 'en', 'hi'
+  name String
 }

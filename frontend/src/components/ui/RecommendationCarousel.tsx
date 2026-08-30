@@ -66,6 +66,10 @@ interface RecommendationProduct {
 
   score?: number
   click_rate_score?: number
+  location_score?: number
+  seller_distance_km?: number | null
+  nearby_seller?: boolean
+  location_priority_applied?: boolean
 
   [key: string]: unknown
 }

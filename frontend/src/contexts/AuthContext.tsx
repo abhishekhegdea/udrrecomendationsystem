@@ -55,6 +55,12 @@ export interface User {
   cityId?: string | null
   city?: LocationRef | null
 
+  latitude?: number | null
+  longitude?: number | null
+  locationAccuracy?: number | null
+  locationAddress?: string | null
+  locationUpdatedAt?: string | null
+
   pincode?: string
 
   emergencyContactName?: string

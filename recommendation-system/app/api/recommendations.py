@@ -370,6 +370,100 @@ def format_product(
             ),
 
         # ====================================================
+        # PRECISE LOCATION
+        # ====================================================
+
+        "location_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "location_score",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "location_weight":
+            round(
+                _safe_float(
+                    PERSONALIZED_CLICK_WEIGHTS.get(
+                        "location",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "location_weight_percentage":
+            _weight_percentage(
+                "location"
+            ),
+
+        "location_contribution":
+            _contribution(
+                _safe_float(
+                    getattr(
+                        product,
+                        "location_score",
+                        0.0,
+                    )
+                ),
+                "location",
+            ),
+
+        "location_contribution_percentage":
+            _contribution_percentage(
+                _safe_float(
+                    getattr(
+                        product,
+                        "location_score",
+                        0.0,
+                    )
+                ),
+                "location",
+            ),
+
+        "seller_distance_km":
+            (
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "seller_distance_km",
+                            0.0,
+                        )
+                    ),
+                    2,
+                )
+                if getattr(
+                    product,
+                    "seller_distance_km",
+                    None,
+                ) is not None
+                else None
+            ),
+
+        "nearby_seller":
+            bool(
+                getattr(
+                    product,
+                    "nearby_seller",
+                    False,
+                )
+            ),
+
+        "location_priority_applied":
+            bool(
+                getattr(
+                    product,
+                    "location_priority_applied",
+                    False,
+                )
+            ),
+
+        # ====================================================
         # ENGAGEMENT
         # ====================================================
 
@@ -415,6 +509,7 @@ def get_home_recommendations(
 
     Product Click Popularity = 4%
     User Click Affinity      = 10%
+    Precise Location         = 10%
     """
 
 
@@ -470,6 +565,44 @@ def get_home_recommendations(
     )
 
 
+    user_latitude = (
+        getattr(
+            user,
+            "latitude",
+            None,
+        )
+        if getattr(
+            user,
+            "latitude",
+            None,
+        ) is not None
+        else getattr(
+            seller,
+            "latitude",
+            None,
+        )
+    )
+
+
+    user_longitude = (
+        getattr(
+            user,
+            "longitude",
+            None,
+        )
+        if getattr(
+            user,
+            "longitude",
+            None,
+        ) is not None
+        else getattr(
+            seller,
+            "longitude",
+            None,
+        )
+    )
+
+
     # ========================================================
     # RUN RECOMMENDATION ENGINE
     # ========================================================
@@ -494,6 +627,12 @@ def get_home_recommendations(
 
             user_state_id=
                 user_state_id,
+
+            user_latitude=
+                user_latitude,
+
+            user_longitude=
+                user_longitude,
         )
     )
 
@@ -589,6 +728,33 @@ def get_home_recommendations(
             _safe_float(
                 scored_product
                 .location_boost
+            )
+        )
+
+
+        seller_distance_km = (
+            getattr(
+                scored_product,
+                "seller_distance_km",
+                None,
+            )
+        )
+
+
+        nearby_seller = bool(
+            getattr(
+                scored_product,
+                "nearby_seller",
+                False,
+            )
+        )
+
+
+        location_priority_applied = bool(
+            getattr(
+                scored_product,
+                "location_priority_applied",
+                False,
             )
         )
 
@@ -811,6 +977,57 @@ def get_home_recommendations(
                     location_score,
                     6,
                 ),
+
+            "location_percentage":
+                _percentage(
+                    location_score
+                ),
+
+            "location_weight":
+                round(
+                    _safe_float(
+                        PERSONALIZED_CLICK_WEIGHTS.get(
+                            "location",
+                            0.0,
+                        )
+                    ),
+                    6,
+                ),
+
+            "location_weight_percentage":
+                _weight_percentage(
+                    "location"
+                ),
+
+            "location_contribution":
+                _contribution(
+                    location_score,
+                    "location",
+                ),
+
+            "location_contribution_percentage":
+                _contribution_percentage(
+                    location_score,
+                    "location",
+                ),
+
+            "seller_distance_km":
+                (
+                    round(
+                        _safe_float(
+                            seller_distance_km
+                        ),
+                        2,
+                    )
+                    if seller_distance_km is not None
+                    else None
+                ),
+
+            "nearby_seller":
+                nearby_seller,
+
+            "location_priority_applied":
+                location_priority_applied,
 
             "category":
                 round(
@@ -1200,6 +1417,34 @@ def get_home_recommendations(
 
         setattr(
             product,
+            "location_score",
+            location_score,
+        )
+
+
+        setattr(
+            product,
+            "seller_distance_km",
+            seller_distance_km,
+        )
+
+
+        setattr(
+            product,
+            "nearby_seller",
+            nearby_seller,
+        )
+
+
+        setattr(
+            product,
+            "location_priority_applied",
+            location_priority_applied,
+        )
+
+
+        setattr(
+            product,
             "engagement_score",
             engagement_score,
         )
@@ -1305,6 +1550,22 @@ def get_home_recommendations(
                 3,
             ),
 
+
+        "location_context": {
+            "latitude":
+                user_latitude,
+            "longitude":
+                user_longitude,
+            "location_weight_percentage":
+                _weight_percentage(
+                    "location"
+                ),
+            "nearby_ranking_enabled":
+                (
+                    user_latitude is not None
+                    and user_longitude is not None
+                ),
+        },
 
         "click_window_days":
             CLICK_EVENT_WINDOW_DAYS,

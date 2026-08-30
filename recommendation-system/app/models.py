@@ -245,6 +245,12 @@ class Seller(Base):
     cityId = Column(String, nullable=True)
     stateId = Column(String, nullable=True)
 
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    locationAccuracy = Column(Float, nullable=True)
+    locationAddress = Column(String, nullable=True)
+    locationUpdatedAt = Column(DateTime, nullable=True)
+
     cancelPenalty = Column(
         "cancelPenalty",
         Float,
@@ -427,6 +433,12 @@ class User(Base):
     role = Column(String)
     cityId = Column(String, nullable=True)
     stateId = Column(String, nullable=True)
+
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    locationAccuracy = Column(Float, nullable=True)
+    locationAddress = Column(String, nullable=True)
+    locationUpdatedAt = Column(DateTime, nullable=True)
 
 
 class Order(Base):
@@ -758,6 +770,32 @@ class RecommendationScoreSnapshot(Base):
         Float,
         nullable=False,
         default=0.0,
+    )
+
+    # Exact normalized weight used by the recommendation engine for this run.
+    # Storing it makes the distance contribution independently auditable:
+    # locationContribution = locationScore * locationWeight.
+    locationWeight = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    sellerDistanceKm = Column(
+        Float,
+        nullable=True,
+    )
+
+    nearbySeller = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    locationPriorityApplied = Column(
+        Boolean,
+        nullable=False,
+        default=False,
     )
 
     categoryAffinityScore = Column(
