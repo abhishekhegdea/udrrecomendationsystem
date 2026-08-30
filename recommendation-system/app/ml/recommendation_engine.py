@@ -90,35 +90,38 @@ logger = logging.getLogger(
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
     "content": 0.15,
-    "collaborative": 0.12,
-    "trending": 0.12,
-    "seasonal": 0.08,
-    "location": 0.04,
+    "collaborative": 0.10,
+    "trending": 0.10,
+    "seasonal": 0.07,
+
+    # ----------------------------------------------------------------------
+    # PRECISE LOCATION RANKING
+    # ----------------------------------------------------------------------
+    # Precise seller proximity is now a first-class ranking signal.
+    # The raw location score is calculated from seller distance and contributes
+    # directly to the recommendation score before business-rule re-ranking.
+    #
+    # location_score = exp(-seller_distance_km / distance_decay_km)
+    # location_contribution = location_score * location_weight
+    "location": 0.10,
+
     "category_affinity": 0.08,
     "brand_affinity": 0.07,
     "rating": 0.07,
-    "seller_freshness": 0.07,
-
-    # ----------------------------------------------------------------------
-    # NEW
-    # ----------------------------------------------------------------------
+    "seller_freshness": 0.06,
     "click_rate": 0.05,
-
-    # Reduced from 20% to 15% so total remains exactly 100%.
     "engagement": 0.15,
 }
 
 
 # Verify:
-#
-# 0.15 + 0.12 + 0.12 + 0.08 + 0.04 +
-# 0.08 + 0.07 + 0.07 + 0.07 + 0.05 +
-# 0.15
-#
-# = 1.00
+# 0.15 + 0.10 + 0.10 + 0.07 + 0.10 +
+# 0.08 + 0.07 + 0.07 + 0.06 + 0.05 +
+# 0.15 = 1.00
 
 
 DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
+    "nearby_sellers": 12,
     "content_based": 40,
     "collaborative": 40,
     "trending": 30,
@@ -130,7 +133,16 @@ DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
 }
 
 
-DEFAULT_LOCAL_SLOTS = 2  # Guaranteed slots for same-city products
+# Fallback city/state reservation when exact coordinates are unavailable.
+DEFAULT_LOCAL_SLOTS = 2
+
+# Precise location ranking defaults.
+EARTH_RADIUS_KM = 6371.0088
+DEFAULT_NEARBY_RADIUS_KM = 100.0
+DEFAULT_DISTANCE_DECAY_KM = 25.0
+DEFAULT_NEARBY_SELLER_LIMIT = 25
+DEFAULT_LOCATION_PRIORITY_SLOTS = 4
+DEFAULT_LOCATION_PRIORITY_MIN_SCORE = 0.15
 
 DEFAULT_MIN_RATING = 0.0
 
@@ -293,6 +305,89 @@ SEASONAL_MAP: Dict[
 
 
 # ===========================================================================
+# PRECISE LOCATION HELPERS
+# ===========================================================================
+
+def _valid_coordinate_pair(
+    latitude: Optional[float],
+    longitude: Optional[float],
+) -> bool:
+    if latitude is None or longitude is None:
+        return False
+
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        -90.0 <= lat <= 90.0
+        and -180.0 <= lon <= 180.0
+    )
+
+
+def haversine_distance_km(
+    latitude_1: float,
+    longitude_1: float,
+    latitude_2: float,
+    longitude_2: float,
+) -> float:
+    """Great-circle distance between two latitude/longitude points."""
+
+    lat1 = math.radians(float(latitude_1))
+    lon1 = math.radians(float(longitude_1))
+    lat2 = math.radians(float(latitude_2))
+    lon2 = math.radians(float(longitude_2))
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = (
+        math.sin(dlat / 2.0) ** 2
+        + math.cos(lat1)
+        * math.cos(lat2)
+        * math.sin(dlon / 2.0) ** 2
+    )
+
+    c = 2.0 * math.atan2(
+        math.sqrt(a),
+        math.sqrt(max(0.0, 1.0 - a)),
+    )
+
+    return EARTH_RADIUS_KM * c
+
+
+def distance_location_score(
+    distance_km: float,
+    decay_km: float = DEFAULT_DISTANCE_DECAY_KM,
+) -> float:
+    """
+    Convert distance into a smooth 0..1 recommendation feature.
+
+    score = exp(-distance / decay)
+
+    With the default 25 km decay:
+        0 km  -> 1.00
+        5 km  -> 0.82
+        10 km -> 0.67
+        25 km -> 0.37
+        50 km -> 0.14
+    """
+
+    distance = max(0.0, float(distance_km))
+    decay = max(1.0, float(decay_km))
+
+    return max(
+        0.0,
+        min(
+            1.0,
+            math.exp(-distance / decay),
+        ),
+    )
+
+
+# ===========================================================================
 # DATA CLASSES
 # ===========================================================================
 
@@ -311,6 +406,12 @@ class ScoredProduct:
     seasonal_boost: float = 0.0
 
     location_boost: float = 0.0
+
+    seller_distance_km: Optional[float] = None
+
+    nearby_seller: bool = False
+
+    location_priority_applied: bool = False
 
     category_boost: float = 0.0
 
@@ -379,6 +480,20 @@ class EngineConfig:
     user_city_id: Optional[str] = None
 
     user_state_id: Optional[str] = None
+
+    user_latitude: Optional[float] = None
+
+    user_longitude: Optional[float] = None
+
+    nearby_radius_km: float = DEFAULT_NEARBY_RADIUS_KM
+
+    distance_decay_km: float = DEFAULT_DISTANCE_DECAY_KM
+
+    nearby_seller_limit: int = DEFAULT_NEARBY_SELLER_LIMIT
+
+    location_priority_slots: int = DEFAULT_LOCATION_PRIORITY_SLOTS
+
+    location_priority_min_score: float = DEFAULT_LOCATION_PRIORITY_MIN_SCORE
 
 
 # ===========================================================================
@@ -458,6 +573,53 @@ class CandidateGenerator:
         self.config = config
 
 
+    def _get_nearby_seller_distances(
+        self,
+    ) -> Dict[str, float]:
+        """Return nearest seller IDs mapped to distance in kilometres."""
+
+        if not _valid_coordinate_pair(
+            self.config.user_latitude,
+            self.config.user_longitude,
+        ):
+            return {}
+
+        sellers = (
+            self.db.query(Seller)
+            .filter(
+                Seller.latitude.isnot(None),
+                Seller.longitude.isnot(None),
+            )
+            .all()
+        )
+
+        ranked: List[Tuple[str, float]] = []
+
+        for seller in sellers:
+            if not _valid_coordinate_pair(
+                getattr(seller, "latitude", None),
+                getattr(seller, "longitude", None),
+            ):
+                continue
+
+            distance = haversine_distance_km(
+                float(self.config.user_latitude),
+                float(self.config.user_longitude),
+                float(seller.latitude),
+                float(seller.longitude),
+            )
+
+            # Nearby candidate generation is intentionally radius bounded.
+            if distance <= max(0.0, self.config.nearby_radius_km):
+                ranked.append((seller.id, distance))
+
+        ranked.sort(key=lambda item: item[1])
+
+        return dict(
+            ranked[: max(1, self.config.nearby_seller_limit)]
+        )
+
+
     def generate(
         self,
         user_id: str,
@@ -488,7 +650,50 @@ class CandidateGenerator:
         )
 
         # ------------------------------------------------------------------
-        # LOCAL SELLERS (queried first so they always enter the pool)
+        # PRECISE NEARBY SELLERS
+        # ------------------------------------------------------------------
+        # Browser geolocation gives the shopper coordinates. Seller coordinates
+        # are stored in PostgreSQL. We calculate Haversine distance locally so
+        # recommendation requests do not make a paid Maps call per product.
+        if _valid_coordinate_pair(
+            self.config.user_latitude,
+            self.config.user_longitude,
+        ):
+            seller_distances = self._get_nearby_seller_distances()
+
+            if seller_distances:
+                seller_ids = list(seller_distances.keys())
+
+                nearby_products = (
+                    self.db.query(Product)
+                    .options(
+                        joinedload(Product.images),
+                        joinedload(Product.seller),
+                    )
+                    .filter(Product.sellerId.in_(seller_ids))
+                    .limit(max(limits["nearby_sellers"] * 4, 60))
+                    .all()
+                )
+
+                nearby_products.sort(
+                    key=lambda product: (
+                        seller_distances.get(
+                            product.sellerId,
+                            float("inf"),
+                        ),
+                        -(getattr(product, "popularity", 0.0) or 0.0),
+                    )
+                )
+
+                for product in nearby_products[: limits["nearby_sellers"]]:
+                    if product.id in seen:
+                        continue
+
+                    seen.add(product.id)
+                    candidates.append((product, "nearby_sellers"))
+
+        # ------------------------------------------------------------------
+        # CITY / STATE LOCAL SELLERS (fallback and complementary candidates)
         # ------------------------------------------------------------------
         if self.config.user_city_id or self.config.user_state_id:
             local_conditions = []
@@ -1115,6 +1320,7 @@ class FeatureComputer:
         "trending": 0.50,
         "new_arrivals": 0.50,
         "category_affinity": 0.55,
+        "nearby_sellers": 0.60,
         "local_sellers": 0.45,
         "search_affinity": 0.55,
         "random_discovery": 0.30,
@@ -1299,14 +1505,23 @@ class FeatureComputer:
             )
 
             # Location
-            if self.config.user_city_id or self.config.user_state_id:
-
-                scored_product.location_boost = (
-                    self
-                    ._compute_location_boost(
-                        product
-                    )
+            if (
+                _valid_coordinate_pair(
+                    self.config.user_latitude,
+                    self.config.user_longitude,
                 )
+                or self.config.user_city_id
+                or self.config.user_state_id
+            ):
+                (
+                    location_score,
+                    seller_distance_km,
+                    nearby_seller,
+                ) = self._compute_location_features(product)
+
+                scored_product.location_boost = location_score
+                scored_product.seller_distance_km = seller_distance_km
+                scored_product.nearby_seller = nearby_seller
 
             # Category
             if (
@@ -1493,18 +1708,78 @@ class FeatureComputer:
         )
 
 
+    def _compute_location_features(
+        self,
+        product: Product,
+    ) -> Tuple[float, Optional[float], bool]:
+        """
+        Compute the continuous distance-based location score.
+
+        Precise coordinates are preferred. City/state matching remains as a
+        fallback for sellers that have not yet been geocoded.
+        """
+
+        seller = getattr(product, "seller", None)
+
+        if seller is None:
+            return 0.0, None, False
+
+        if (
+            _valid_coordinate_pair(
+                self.config.user_latitude,
+                self.config.user_longitude,
+            )
+            and _valid_coordinate_pair(
+                getattr(seller, "latitude", None),
+                getattr(seller, "longitude", None),
+            )
+        ):
+            distance_km = haversine_distance_km(
+                float(self.config.user_latitude),
+                float(self.config.user_longitude),
+                float(seller.latitude),
+                float(seller.longitude),
+            )
+
+            score = distance_location_score(
+                distance_km,
+                self.config.distance_decay_km,
+            )
+
+            is_nearby = (
+                distance_km
+                <= max(0.0, self.config.nearby_radius_km)
+            )
+
+            return score, distance_km, is_nearby
+
+        # Coordinate fallback keeps the pre-existing behaviour meaningful while
+        # sellers are progressively backfilled with precise coordinates.
+        if (
+            self.config.user_city_id
+            and getattr(seller, "cityId", None)
+            == self.config.user_city_id
+        ):
+            return 0.75, None, True
+
+        if (
+            self.config.user_state_id
+            and getattr(seller, "stateId", None)
+            == self.config.user_state_id
+        ):
+            return 0.40, None, False
+
+        return 0.0, None, False
+
+
     def _compute_location_boost(
         self,
         product: Product,
     ) -> float:
+        """Backward-compatible wrapper retained for existing tests/callers."""
 
-        boost = 0.0
-        if product.seller:
-            if self.config.user_city_id and getattr(product.seller, 'cityId', None) == self.config.user_city_id:
-                boost = 0.20
-            elif self.config.user_state_id and getattr(product.seller, 'stateId', None) == self.config.user_state_id:
-                boost = 0.10
-        return boost
+        score, _, _ = self._compute_location_features(product)
+        return score
 
 
     def _compute_rating_score(
@@ -2482,7 +2757,14 @@ class BusinessRuleFilter:
         # Local-seller slot reservation
         if (
             self.config.local_slots > 0
-            and (self.config.user_city_id or self.config.user_state_id)
+            and (
+                _valid_coordinate_pair(
+                    self.config.user_latitude,
+                    self.config.user_longitude,
+                )
+                or self.config.user_city_id
+                or self.config.user_state_id
+            )
         ):
             final = self._reserve_local_slots(final, all_scored)
 
@@ -2494,36 +2776,87 @@ class BusinessRuleFilter:
         final: List[ScoredProduct],
         pool: List[ScoredProduct],
     ) -> List[ScoredProduct]:
-        """Guarantee up to ``config.local_slots`` same-city products survive
-        into the final ranking by swapping out the lowest-scoring
-        non-local products."""
+        """Guarantee nearby/same-city products survive diversity/fairness trimming."""
+
         if not final:
             return final
 
+        def is_local(sp: ScoredProduct) -> bool:
+            return bool(
+                getattr(
+                    sp,
+                    "nearby_seller",
+                    False,
+                )
+                or (
+                    getattr(
+                        sp,
+                        "seller_distance_km",
+                        None,
+                    ) is None
+                    and sp.location_boost > 0
+                )
+            )
+
         locals_by_score = sorted(
-            (sp for sp in pool if sp.location_boost > 0),
+            (sp for sp in pool if is_local(sp)),
             key=lambda sp: sp.final_score,
             reverse=True,
         )
+
         if not locals_by_score:
             return final
 
+        target_len = len(final)
         final_ids = {sp.product.id for sp in final}
-        missing = [sp for sp in locals_by_score if sp.product.id not in final_ids]
-        need = min(self.config.local_slots, len(missing))
+        existing_local = [sp for sp in final if is_local(sp)]
+
+        required_total = min(
+            self.config.local_slots,
+            target_len,
+        )
+
+        need = max(
+            0,
+            required_total - len(existing_local),
+        )
+
         if need == 0:
             return final
 
+        missing = [
+            sp
+            for sp in locals_by_score
+            if sp.product.id not in final_ids
+        ][:need]
+
+        if not missing:
+            return final
+
+        remove_count = len(missing)
         non_local = sorted(
-            (sp for sp in final if sp.location_boost <= 0),
+            (sp for sp in final if not is_local(sp)),
+            key=lambda sp: sp.final_score,
+        )
+
+        remove_ids = {
+            sp.product.id
+            for sp in non_local[:remove_count]
+        }
+
+        kept = [
+            sp
+            for sp in final
+            if sp.product.id not in remove_ids
+        ]
+
+        kept.extend(missing)
+        kept.sort(
             key=lambda sp: sp.final_score,
             reverse=True,
         )
-        kept = non_local[: len(non_local) - need]
-        kept += [sp for sp in final if sp.location_boost > 0]
-        kept += missing[:need]
-        kept.sort(key=lambda sp: sp.final_score, reverse=True)
-        return kept
+
+        return kept[:target_len]
 
     def _get_purchased_product_ids(
         self,
@@ -2700,10 +3033,13 @@ class RankerSelector:
     def __init__(
         self,
         total_slots: int,
+        config: Optional[EngineConfig] = None,
     ):
         self.total_slots = (
             total_slots
         )
+
+        self.config = config
 
 
     def select(
@@ -2725,8 +3061,61 @@ class RankerSelector:
             reverse=True,
         )
 
+        # Location-priority re-ranking. The nearest qualified products receive
+        # a small, bounded number of top slots; the rest of the list continues
+        # to follow the full recommendation score. This satisfies nearby-first
+        # UX without turning the entire recommender into a distance-only sort.
+        if (
+            self.config is not None
+            and _valid_coordinate_pair(
+                self.config.user_latitude,
+                self.config.user_longitude,
+            )
+            and self.config.location_priority_slots > 0
+        ):
+            priority_candidates = [
+                sp
+                for sp in scored
+                if sp.nearby_seller
+                and sp.seller_distance_km is not None
+                and sp.final_score
+                >= self.config.location_priority_min_score
+            ]
+
+            priority_candidates.sort(
+                key=lambda sp: (
+                    sp.seller_distance_km,
+                    -sp.final_score,
+                )
+            )
+
+            priority = priority_candidates[
+                : min(
+                    self.config.location_priority_slots,
+                    self.total_slots,
+                )
+            ]
+
+            priority_ids = {
+                sp.product.id
+                for sp in priority
+            }
+
+            for sp in priority:
+                sp.location_priority_applied = True
+
+            remainder = [
+                sp
+                for sp in scored
+                if sp.product.id not in priority_ids
+            ]
+
+            ranked = priority + remainder
+        else:
+            ranked = scored
+
         top = (
-            scored[
+            ranked[
                 :self.total_slots
             ]
         )
@@ -2782,7 +3171,11 @@ class RankerSelector:
             (
                 scored_product.location_boost,
                 "location",
-                "From a seller near you.",
+                (
+                    f"Nearby seller — {scored_product.seller_distance_km:.1f} km away."
+                    if scored_product.seller_distance_km is not None
+                    else "From a seller near you."
+                ),
             ),
 
             (
@@ -2901,6 +3294,8 @@ class RecommendationEngine:
         user_location: Optional[str] = None,
         user_city_id: Optional[str] = None,
         user_state_id: Optional[str] = None,
+        user_latitude: Optional[float] = None,
+        user_longitude: Optional[float] = None,
         weights: Optional[
             Dict[
                 str,
@@ -2941,6 +3336,12 @@ class RecommendationEngine:
 
             user_state_id=
                 user_state_id,
+
+            user_latitude=
+                user_latitude,
+
+            user_longitude=
+                user_longitude,
 
             **rule_overrides,
         )
@@ -3020,7 +3421,8 @@ class RecommendationEngine:
 
         selector = (
             RankerSelector(
-                config.total_slots
+                config.total_slots,
+                config=config,
             )
         )
 

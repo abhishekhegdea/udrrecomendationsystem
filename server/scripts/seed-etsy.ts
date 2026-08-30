@@ -39,6 +39,20 @@ interface EtsyRow {
   images?: string
   product_details?: string
   scraped_at?: string
+
+  // Optional synthetic/test seller-location columns.
+  // These are used only when present in the CSV.
+  seller_city?: string
+  seller_state?: string
+  seller_country?: string
+  seller_latitude?: string
+  seller_longitude?: string
+  seller_location_accuracy?: string
+  seller_location_address?: string
+  seller_location_updated_at?: string
+  seller_location_source?: string
+  test_distance_from_udaipur_km?: string
+  test_location_band?: string
 }
 
 
@@ -966,6 +980,195 @@ async function main() {
 
   console.log(
     `👤 Sellers ready: ${sellerMap.size + 1}`
+  )
+
+  /**
+   * -----------------------------------------------------
+   * Optional seller locations from CSV
+   * -----------------------------------------------------
+   *
+   * The location-test CSV contains one stable synthetic location per
+   * seller/brand. This block updates both newly created and already existing
+   * seller rows, allowing the location recommender to be tested immediately
+   * without depending on cityId/stateId or Google geocoding.
+   */
+  const sellerLocationByBrand =
+    new Map<
+      string,
+      {
+        latitude: number
+        longitude: number
+        locationAccuracy: number | null
+        locationAddress: string | null
+        locationUpdatedAt: Date
+      }
+    >()
+
+  for (
+    const record
+    of records
+  ) {
+    const brandName =
+      record.brand
+        ?.trim()
+
+    if (
+      !brandName ||
+      sellerLocationByBrand.has(
+        brandName
+      )
+    ) {
+      continue
+    }
+
+    const latitude =
+      Number.parseFloat(
+        record.seller_latitude ||
+          ''
+      )
+
+    const longitude =
+      Number.parseFloat(
+        record.seller_longitude ||
+          ''
+      )
+
+    if (
+      !Number.isFinite(
+        latitude
+      ) ||
+      !Number.isFinite(
+        longitude
+      )
+    ) {
+      continue
+    }
+
+    const rawAccuracy =
+      Number.parseFloat(
+        record.seller_location_accuracy ||
+          ''
+      )
+
+    const parsedUpdatedAt =
+      record.seller_location_updated_at
+        ? new Date(
+            record.seller_location_updated_at
+          )
+        : new Date()
+
+    sellerLocationByBrand.set(
+      brandName,
+      {
+        latitude,
+        longitude,
+
+        locationAccuracy:
+          Number.isFinite(
+            rawAccuracy
+          )
+            ? rawAccuracy
+            : null,
+
+        locationAddress:
+          record
+            .seller_location_address
+            ?.trim() ||
+          null,
+
+        locationUpdatedAt:
+          Number.isNaN(
+            parsedUpdatedAt.getTime()
+          )
+            ? new Date()
+            : parsedUpdatedAt,
+      }
+    )
+  }
+
+  let sellersLocationUpdated =
+    0
+
+  const sellerLocationEntries =
+    Array.from(
+      sellerLocationByBrand.entries()
+    )
+
+  for (
+    let start = 0;
+    start <
+      sellerLocationEntries.length;
+    start += BATCH_SIZE
+  ) {
+    const currentBatch =
+      sellerLocationEntries.slice(
+        start,
+        start + BATCH_SIZE
+      )
+
+    const operations =
+      currentBatch
+        .map(
+          (
+            [
+              brandName,
+              location,
+            ]
+          ) => {
+            const sellerId =
+              sellerMap.get(
+                brandName
+              )
+
+            if (!sellerId) {
+              return null
+            }
+
+            return prisma.seller.update({
+              where: {
+                id:
+                  sellerId,
+              },
+
+              data: {
+                latitude:
+                  location.latitude,
+
+                longitude:
+                  location.longitude,
+
+                locationAccuracy:
+                  location.locationAccuracy,
+
+                locationAddress:
+                  location.locationAddress,
+
+                locationUpdatedAt:
+                  location.locationUpdatedAt,
+              },
+            })
+          }
+        )
+        .filter(
+          Boolean
+        )
+
+    if (
+      operations.length === 0
+    ) {
+      continue
+    }
+
+    await prisma.$transaction(
+      operations as any[]
+    )
+
+    sellersLocationUpdated +=
+      operations.length
+  }
+
+  console.log(
+    `📍 Seller test locations updated: ${sellersLocationUpdated}`
   )
 
   /**

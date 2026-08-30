@@ -1,46 +1,78 @@
-import { useEffect, useRef } from 'react';
-import api from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { useEffect, useRef } from 'react'
+import api from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
+
+const LOCATION_SESSION_KEY = 'udrcrafts-location-synced'
+const MAX_LOCATION_AGE_MS = 5 * 60 * 1000
 
 export function useGeolocation() {
-  const { user } = useAuth();
-  const locationFetched = useRef(false);
+  const { user } = useAuth()
+  const locationFetched = useRef(false)
 
   useEffect(() => {
-    // Only fetch for logged-in customers if we haven't already fetched in this session
-    if (!user || user.role !== 'CUSTOMER' || locationFetched.current) return;
+    if (!user || locationFetched.current) return
 
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          locationFetched.current = true;
-          const { latitude, longitude } = position.coords;
-          
-          try {
-            // Reverse geocoding via Nominatim
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-            );
-            const data = await response.json();
-            
-            if (data && data.address) {
-              const city = data.address.city || data.address.town || data.address.village || data.address.county;
-              const state = data.address.state;
-              
-              if (city && state) {
-                // Send to our backend to resolve DB IDs and update user
-                await api.put('/auth/location', { city, state });
-                console.log(`Location updated: ${city}, ${state}`);
-              }
-            }
-          } catch (error) {
-            console.error('Failed to resolve or update location:', error);
-          }
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-        }
-      );
+    // Customers provide the shopper location; sellers provide the shop/seller
+    // location. Admin/delivery accounts do not participate in recommendation
+    // proximity scoring.
+    if (user.role !== 'CUSTOMER' && user.role !== 'SELLER') return
+
+    if (sessionStorage.getItem(LOCATION_SESSION_KEY) === user.id) {
+      locationFetched.current = true
+      return
     }
-  }, [user]);
+
+    if (!('geolocation' in navigator)) {
+      console.warn('Browser geolocation is not available.')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        locationFetched.current = true
+
+        const token = localStorage.getItem('token')
+        if (!token) return
+
+        const { latitude, longitude, accuracy } = position.coords
+
+        try {
+          const response = await api.put(
+            '/api/auth/location',
+            {
+              latitude,
+              longitude,
+              accuracy,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          )
+
+          sessionStorage.setItem(LOCATION_SESSION_KEY, user.id)
+
+          console.log('Precise location synchronized:', {
+            latitude,
+            longitude,
+            accuracy,
+            address: response.data?.location?.formattedAddress,
+          })
+        } catch (error) {
+          // Do not mark the session as synchronized when the backend failed.
+          locationFetched.current = false
+          console.error('Failed to synchronize location:', error)
+        }
+      },
+      (error) => {
+        console.warn('Geolocation permission/error:', error.message)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: MAX_LOCATION_AGE_MS,
+      }
+    )
+  }, [user])
 }

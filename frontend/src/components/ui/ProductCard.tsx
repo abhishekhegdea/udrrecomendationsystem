@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Heart, ShoppingBag, Eye } from 'lucide-react'
+import { Heart, ShoppingBag, Eye, MapPin } from 'lucide-react'
 
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useCart } from '@/contexts/CartContext'
@@ -31,6 +31,9 @@ interface Product {
   description?: string
   materials?: string[]
   categoryName?: string
+  seller_distance_km?: number | null
+  nearby_seller?: boolean
+  location_priority_applied?: boolean
 }
 
 export function ProductCard({
@@ -258,6 +261,19 @@ export function ProductCard({
             </span>
           </div>
         )}
+
+        {/* Nearby seller badge */}
+        {product.nearby_seller &&
+          typeof product.seller_distance_km === 'number' && (
+            <div
+              className="absolute bottom-3 left-3 bg-background/90 backdrop-blur-md text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow-sm z-10 flex items-center gap-1 border border-border/60"
+            >
+              <MapPin className="h-3 w-3 text-primary" />
+              {product.seller_distance_km < 1
+                ? `${Math.max(1, Math.round(product.seller_distance_km * 1000))} m away`
+                : `${product.seller_distance_km.toFixed(1)} km away`}
+            </div>
+          )}
 
         {/* New seller badge */}
         {product.seller_new && (

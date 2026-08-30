@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db';
+import { geocodeAddress, reverseGeocode, type GoogleResolvedLocation } from '../services/googleMaps';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -87,55 +88,157 @@ router.put('/me', authMiddleware, async (req: any, res: any) => {
 router.put('/location', authMiddleware, async (req: any, res: any) => {
   try {
     const { id, role } = req.user;
-    const { city, state } = req.body;
-    
-    if (!city || !state) {
-      return res.status(400).json({ error: 'City and State are required' });
+    const {
+      latitude: rawLatitude,
+      longitude: rawLongitude,
+      accuracy: rawAccuracy,
+      city: requestedCity,
+      state: requestedState,
+    } = req.body;
+
+    const latitude = rawLatitude === undefined || rawLatitude === null
+      ? null
+      : Number(rawLatitude);
+
+    const longitude = rawLongitude === undefined || rawLongitude === null
+      ? null
+      : Number(rawLongitude);
+
+    const accuracy = rawAccuracy === undefined || rawAccuracy === null
+      ? null
+      : Number(rawAccuracy);
+
+    const hasCoordinates =
+      latitude !== null &&
+      longitude !== null &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 && latitude <= 90 &&
+      longitude >= -180 && longitude <= 180;
+
+    const hasNamedLocation = Boolean(requestedCity && requestedState);
+
+    if (!hasCoordinates && !hasNamedLocation) {
+      return res.status(400).json({
+        error: 'Provide valid latitude/longitude or both city and state.',
+      });
     }
 
-    // Try to find the exact state and city in the DB (case insensitive)
-    const dbState = await prisma.state.findFirst({
-      where: { name: { equals: state, mode: 'insensitive' } }
-    });
+    let resolved: GoogleResolvedLocation | null = null;
 
-    if (!dbState) {
-      return res.status(404).json({ error: `State '${state}' not found in database.` });
-    }
-
-    const dbCity = await prisma.city.findFirst({
-      where: { 
-        name: { equals: city, mode: 'insensitive' },
-        stateId: dbState.id 
+    // Precise browser coordinates are authoritative for distance ranking.
+    if (hasCoordinates) {
+      try {
+        resolved = await reverseGeocode(latitude!, longitude!);
+      } catch (error) {
+        // Distance-based recommendations can still work with raw coordinates
+        // even when reverse geocoding is temporarily unavailable.
+        console.warn('Google reverse geocoding failed; saving raw coordinates only:', error);
+        resolved = {
+          latitude: latitude!,
+          longitude: longitude!,
+        };
       }
-    });
-
-    if (!dbCity) {
-      return res.status(404).json({ error: `City '${city}' not found in database for state '${state}'.` });
+    } else {
+      // Manual profile city/state fallback. Google converts the textual
+      // location to coordinates so the seller/user can still participate in
+      // precise distance ranking.
+      try {
+        resolved = await geocodeAddress(`${requestedCity}, ${requestedState}, India`);
+      } catch (error) {
+        console.warn('Google address geocoding failed:', error);
+      }
     }
+
+    const cityName = resolved?.city || requestedCity;
+    const stateName = resolved?.state || requestedState;
+
+    let dbState: any = null;
+    let dbCity: any = null;
+
+    if (stateName) {
+      dbState = await prisma.state.findFirst({
+        where: {
+          name: {
+            equals: String(stateName),
+            mode: 'insensitive',
+          },
+        },
+      });
+    }
+
+    if (cityName && dbState) {
+      dbCity = await prisma.city.findFirst({
+        where: {
+          name: {
+            equals: String(cityName),
+            mode: 'insensitive',
+          },
+          stateId: dbState.id,
+        },
+      });
+    }
+
+    const coordinateLatitude = resolved?.latitude ?? latitude;
+    const coordinateLongitude = resolved?.longitude ?? longitude;
+
+    const locationData = {
+      latitude: coordinateLatitude ?? undefined,
+      longitude: coordinateLongitude ?? undefined,
+      locationAccuracy:
+        accuracy !== null && Number.isFinite(accuracy)
+          ? accuracy
+          : undefined,
+      locationAddress: resolved?.formattedAddress ?? undefined,
+      locationUpdatedAt: new Date(),
+      stateId: dbState?.id ?? undefined,
+      cityId: dbCity?.id ?? undefined,
+    };
 
     if (role === 'DELIVERY') {
-      return res.json({ user: await prisma.deliveryPartner.findUnique({ where: { id } }) });
+      return res.json({
+        user: await prisma.deliveryPartner.findUnique({ where: { id } }),
+        location: resolved,
+        message: 'Delivery partner location is not used for recommendation scoring.',
+      });
     }
-    
+
     if (role === 'SELLER') {
       const seller = await prisma.seller.update({
         where: { id },
-        data: { stateId: dbState.id, cityId: dbCity.id }
+        data: locationData,
       });
+
       const { password: _, ...safeSeller } = seller;
-      return res.json({ user: { ...safeSeller, role: 'SELLER' }, message: `Location updated to ${dbCity.name}, ${dbState.name}` });
+
+      return res.json({
+        user: { ...safeSeller, role: 'SELLER' },
+        location: resolved,
+        cityMatched: Boolean(dbCity),
+        stateMatched: Boolean(dbState),
+        message: 'Seller location updated for nearby-product ranking.',
+      });
     }
-    
-    // Default to User table (CUSTOMER / ADMIN)
+
+    // CUSTOMER / ADMIN. CUSTOMER coordinates are consumed by the Python
+    // recommendation service on the next recommendation call.
     const user = await prisma.user.update({
       where: { id },
-      data: { stateId: dbState.id, cityId: dbCity.id }
+      data: locationData,
     });
+
     const { password: _, ...safeUser } = user;
-    return res.json({ user: safeUser, message: `Location updated to ${dbCity.name}, ${dbState.name}` });
+
+    return res.json({
+      user: safeUser,
+      location: resolved,
+      cityMatched: Boolean(dbCity),
+      stateMatched: Boolean(dbState),
+      message: 'Shopper location updated for nearby-seller recommendations.',
+    });
   } catch (error) {
     console.error('Update location error:', error);
-    res.status(500).json({ error: 'Failed to update location' });
+    return res.status(500).json({ error: 'Failed to update location' });
   }
 });
 
