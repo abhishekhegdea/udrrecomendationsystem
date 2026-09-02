@@ -52,6 +52,23 @@ from app.models import (
     UserBehaviour,
 )
 
+from app.ml.cold_start import (
+    STAGE_COMPLETELY_COLD,
+    STAGE_EARLY_SIGNAL,
+    STAGE_EMERGING_PROFILE,
+    STAGE_DEVELOPING_PROFILE,
+    STAGE_WARM,
+    MODE_COLD_START,
+    MODE_EARLY_PERSONALIZED,
+    MODE_PERSONALIZED,
+    UserActivityProfile,
+    get_user_activity_profile,
+    get_cold_start_blend,
+    generate_cold_start_candidates,
+    compute_cold_start_scores,
+    build_cold_start_explanation,
+)
+
 
 # ============================================================
 # CONFIGURATION
@@ -1352,28 +1369,42 @@ class ClickAwareCandidateGenerator(
             str,
         ]
     ]:
+        activity_profile = get_user_activity_profile(self.db, user_id)
 
-        # ----------------------------------------------------
-        # Existing recommendation candidates
-        # ----------------------------------------------------
+        # Completely cold user -> directly generate diversified cold-start candidates
+        if activity_profile.activity_stage == STAGE_COMPLETELY_COLD:
+            return generate_cold_start_candidates(self.db, self.config, user_id)
 
+        # Early, emerging, developing or warm user -> generate base candidates
         candidates = (
             super().generate(
                 user_id
             )
         )
 
-
         seen = {
-
             product.id
-
             for (
                 product,
                 _,
             ) in candidates
         }
 
+        # Include cold-start candidates for early/emerging/developing users to guarantee multi-source variety
+        if activity_profile.activity_stage in (
+            STAGE_EARLY_SIGNAL,
+            STAGE_EMERGING_PROFILE,
+            STAGE_DEVELOPING_PROFILE,
+        ):
+            cold_candidates = generate_cold_start_candidates(
+                self.db,
+                self.config,
+                user_id,
+            )
+            for product, source in cold_candidates:
+                if product.id not in seen:
+                    seen.add(product.id)
+                    candidates.append((product, source))
 
         # ----------------------------------------------------
         # Strongest recently clicked products
@@ -1381,51 +1412,39 @@ class ClickAwareCandidateGenerator(
 
         seeds = (
             load_user_click_seeds(
-
                 self.db,
-
                 user_id,
-
                 max_seeds=
                     CLICK_AFFINITY_MAX_SEEDS,
             )
         )
-
 
         # ----------------------------------------------------
         # Add semantically similar products
         # ----------------------------------------------------
 
         for seed in seeds:
-
             similar_products = (
                 get_similar_products(
-
                     seed.product.id,
-
                     self.db,
-
                     limit=
                         CLICK_AFFINITY_CANDIDATES_PER_SEED,
                 )
             )
 
-
             for product in (
                 similar_products
             ):
-
                 if (
                     product.id
                     in seen
                 ):
                     continue
 
-
                 seen.add(
                     product.id
                 )
-
 
                 candidates.append(
                     (
@@ -1433,7 +1452,6 @@ class ClickAwareCandidateGenerator(
                         "click_affinity",
                     )
                 )
-
 
         return candidates
 
@@ -1800,133 +1818,127 @@ class ClickAwareScoreBlender:
         candidates: List[
             ScoredProduct
         ],
+        db: Optional[Session] = None,
+        config: Optional[EngineConfig] = None,
+        user_id: Optional[str] = None,
     ) -> List[
         ScoredProduct
     ]:
-
         w = (
             self.weights
         )
 
+        activity_profile = (
+            get_user_activity_profile(db, user_id)
+            if (db is not None and user_id is not None)
+            else None
+        )
+
+        cold_scores_map = (
+            compute_cold_start_scores(candidates, db, config)
+            if (db is not None and config is not None)
+            else {}
+        )
 
         for sp in candidates:
-
             user_click_affinity = float(
-
                 getattr(
                     sp,
                     "user_click_affinity_score",
                     0.0,
                 )
-
                 or 0.0
             )
 
-
-            blended = (
-
+            blended_personalized = (
                 w.get(
                     "content",
                     0.0,
                 )
                 * sp.content_score
-
-                +
-
-                w.get(
+                + w.get(
                     "collaborative",
                     0.0,
                 )
                 * sp.collab_score
-
-                +
-
-                w.get(
+                + w.get(
                     "trending",
                     0.0,
                 )
                 * sp.trend_score
-
-                +
-
-                w.get(
+                + w.get(
                     "seasonal",
                     0.0,
                 )
                 * sp.seasonal_boost
-
-                +
-
-                w.get(
+                + w.get(
                     "location",
                     0.0,
                 )
                 * sp.location_boost
-
-                +
-
-                w.get(
+                + w.get(
                     "category_affinity",
                     0.0,
                 )
                 * sp.category_boost
-
-                +
-
-                w.get(
+                + w.get(
                     "brand_affinity",
                     0.0,
                 )
                 * sp.brand_boost
-
-                +
-
-                w.get(
+                + w.get(
                     "rating",
                     0.0,
                 )
                 * sp.rating_score
-
-                +
-
-                w.get(
+                + w.get(
                     "seller_freshness",
                     0.0,
                 )
                 * sp.seller_boost
-
-                +
-
-                w.get(
+                + w.get(
                     "click_rate",
                     0.0,
                 )
                 * sp.click_rate_score
-
-                +
-
-                w.get(
+                + w.get(
                     "user_click_affinity",
                     0.0,
                 )
                 * user_click_affinity
-
-                +
-
-                w.get(
+                + w.get(
                     "engagement",
                     0.0,
                 )
                 * sp.engagement_score
             )
 
+            pers_score = _clamp01(blended_personalized)
+            sp.personalized_score = pers_score
 
-            sp.final_score = (
-                _clamp01(
-                    blended
+            cold_info = cold_scores_map.get(sp.product.id)
+            if cold_info:
+                sp.cold_start_score = cold_info.cold_start_score
+                sp.cold_start_scores = cold_info
+            else:
+                sp.cold_start_score = pers_score
+                sp.cold_start_scores = None
+
+            if activity_profile is not None:
+                sp.cold_start_weight = activity_profile.cold_start_weight
+                sp.personalized_weight = activity_profile.personalized_weight
+                sp.user_activity_stage = activity_profile.activity_stage
+                sp.user_activity_count = activity_profile.total_interactions
+                sp.recommendation_mode = activity_profile.recommendation_mode
+
+                # Progressive blending: FinalScore = W_cold * S_cold + W_pers * S_pers
+                final = (
+                    activity_profile.cold_start_weight * sp.cold_start_score
+                    + activity_profile.personalized_weight * pers_score
                 )
-            )
-
+                sp.final_score = _clamp01(final)
+            else:
+                sp.final_score = pers_score
 
         return candidates
 
@@ -1943,7 +1955,6 @@ class ClickAwareRankerSelector(
     def _build_explanation(
         sp: ScoredProduct,
     ) -> str:
-
         if (
             getattr(
                 sp,
@@ -1960,24 +1971,33 @@ class ClickAwareRankerSelector(
                 f"Nearby seller — {sp.seller_distance_km:.1f} km away."
             )
 
-        affinity = float(
+        # If user is in cold start or product comes from cold candidate generation
+        activity_stage = getattr(sp, "user_activity_stage", None)
+        product_source = getattr(sp, "source", "") or ""
+        cold_info = getattr(sp, "cold_start_scores", None)
 
+        if activity_stage == STAGE_COMPLETELY_COLD or product_source.startswith("cold_"):
+            if cold_info and getattr(cold_info, "explanation", None):
+                return cold_info.explanation
+
+        affinity = float(
             getattr(
                 sp,
                 "user_click_affinity_score",
                 0.0,
             )
-
             or 0.0
         )
 
-
-        if affinity >= 0.55:
-
+        if affinity >= 0.55 and activity_stage != STAGE_COMPLETELY_COLD:
             return (
                 "Based on products you've been clicking recently."
             )
 
+        if cold_info and getattr(cold_info, "explanation", None) and activity_stage in (STAGE_EARLY_SIGNAL, STAGE_EMERGING_PROFILE):
+            # If personalized score is negligible, prefer cold-start explanation
+            if getattr(sp, "personalized_score", 0.0) < 0.15:
+                return cold_info.explanation
 
         return (
             RankerSelector
@@ -1995,7 +2015,7 @@ class ClickPersonalizedRecommendationEngine:
     """
     Full recommendation pipeline:
 
-        Candidate generation
+        Candidate generation (Personalized + Cold-Start)
                 ↓
         Existing features
                 +
@@ -2003,19 +2023,17 @@ class ClickPersonalizedRecommendationEngine:
                 +
         User Click Affinity
                 ↓
-        Weighted blending
+        Progressive Cold-Start / Personalized Blending
                 ↓
         Business rules
                 ↓
         Final ranking
     """
 
-
     def __init__(
         self,
         db: Session,
     ):
-
         self.db = db
 
 
@@ -2040,48 +2058,34 @@ class ClickPersonalizedRecommendationEngine:
     ) -> List[
         ScoredProduct
     ]:
-
         merged_weights = dict(
             PERSONALIZED_CLICK_WEIGHTS
         )
 
-
         if weights:
-
             merged_weights.update(
                 weights
             )
 
-
         config = EngineConfig(
-
             weights=
                 merged_weights,
-
             total_slots=
                 limit,
-
             include_random=
                 include_random,
-
             user_location=
                 user_location,
-
             user_city_id=
                 user_city_id,
-
             user_state_id=
                 user_state_id,
-
             user_latitude=
                 user_latitude,
-
             user_longitude=
                 user_longitude,
-
             **rule_overrides,
         )
-
 
         # ====================================================
         # STAGE 1
@@ -2095,13 +2099,11 @@ class ClickPersonalizedRecommendationEngine:
             )
         )
 
-
         candidates = (
             generator.generate(
                 user_id
             )
         )
-
 
         # ====================================================
         # STAGE 2
@@ -2115,7 +2117,6 @@ class ClickPersonalizedRecommendationEngine:
             )
         )
 
-
         scored = (
             computer.compute(
                 candidates,
@@ -2123,10 +2124,9 @@ class ClickPersonalizedRecommendationEngine:
             )
         )
 
-
         # ====================================================
         # STAGE 3
-        # Weighted Blending
+        # Progressive Cold-Start / Personalized Blending
         # ====================================================
 
         blender = (
@@ -2135,10 +2135,12 @@ class ClickPersonalizedRecommendationEngine:
             )
         )
 
-
         scored = (
             blender.blend(
-                scored
+                scored,
+                db=self.db,
+                config=config,
+                user_id=user_id,
             )
         )
 

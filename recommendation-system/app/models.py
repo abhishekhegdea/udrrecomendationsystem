@@ -450,6 +450,7 @@ class User(Base):
     )
 
     firstName = Column(String)
+    lastName = Column(String, nullable=True)
 
     email = Column(String)
 

@@ -55,6 +55,12 @@ from app.ml.recommendation_score_logger import (
     persist_recommendation_run,
 )
 
+from app.ml.cold_start import (
+    get_user_activity_profile,
+    STAGE_COMPLETELY_COLD,
+    MODE_COLD_START,
+)
+
 from app.ml.seller_boost import (
     CANCEL_PENALTY_WEIGHT,
     fair_rank,
@@ -470,6 +476,30 @@ def format_product(
         "engagement_score":
             round(
                 engagement_score,
+                6,
+            ),
+
+        "cold_start_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "cold_start_score",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "personalized_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "personalized_score",
+                        0.0,
+                    )
+                ),
                 6,
             ),
 
@@ -1350,6 +1380,54 @@ def get_home_recommendations(
                     business_rule_adjustment
                 ),
 
+            "cold_start_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "cold_start_score",
+                            final_score,
+                        )
+                    ),
+                    6,
+                ),
+
+            "personalized_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "personalized_score",
+                            final_score,
+                        )
+                    ),
+                    6,
+                ),
+
+            "cold_start_weight":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "cold_start_weight",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "personalized_weight":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "personalized_weight",
+                            1.0,
+                        )
+                    ),
+                    4,
+                ),
+
             "final_score":
                 round(
                     final_score,
@@ -1371,6 +1449,30 @@ def get_home_recommendations(
         # ====================================================
         # ATTACH VALUES TO PRODUCT FOR SERIALIZATION
         # ====================================================
+
+        setattr(
+            product,
+            "cold_start_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "cold_start_score",
+                    final_score,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "personalized_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "personalized_score",
+                    final_score,
+                )
+            ),
+        )
 
         setattr(
             product,
@@ -1518,6 +1620,8 @@ def get_home_recommendations(
         )
 
 
+    activity_profile = get_user_activity_profile(db, user_id)
+
     # ========================================================
     # API RESPONSE
     # ========================================================
@@ -1527,6 +1631,38 @@ def get_home_recommendations(
         "user_id":
             user_id,
 
+        # ----------------------------------------------------
+        # COLD-START & ACTIVITY METADATA
+        # ----------------------------------------------------
+
+        "recommendation_mode":
+            activity_profile.recommendation_mode,
+
+        "user_activity_stage":
+            activity_profile.activity_stage,
+
+        "user_activity_count":
+            activity_profile.total_interactions,
+
+        "cold_start_blend": {
+            "cold_start_weight":
+                activity_profile.cold_start_weight,
+            "personalized_weight":
+                activity_profile.personalized_weight,
+            "cold_start_percentage":
+                _percentage(
+                    activity_profile.cold_start_weight,
+                    1,
+                ),
+            "personalized_percentage":
+                _percentage(
+                    activity_profile.personalized_weight,
+                    1,
+                ),
+        },
+
+        "user_activity_breakdown":
+            activity_profile.breakdown,
 
         # ----------------------------------------------------
         # RECOMMENDATION AUDIT
