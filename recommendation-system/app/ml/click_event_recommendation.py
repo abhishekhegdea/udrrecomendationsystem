@@ -14,6 +14,10 @@ This module adds TWO separate click signals:
      and frequency/recency of the user's clicks.
 
 The original recommendation_engine.py remains unchanged.
+
+Dynamic weights are resolved per user before blending.  When a trained
+LightGBM/XGBoost ranker is available, its learned gain importance is blended
+with NEW/ACTIVE/RETURNING segment priors.
 """
 
 from __future__ import annotations
@@ -43,6 +47,10 @@ from app.ml.recommendation_engine import (
     FeatureComputer,
     RankerSelector,
     ScoredProduct,
+)
+
+from app.ml.learning_to_rank import (
+    DynamicWeightResolver,
 )
 
 from app.models import (
@@ -2024,6 +2032,11 @@ class ClickPersonalizedRecommendationEngine:
         User Click Affinity
                 ↓
         Progressive Cold-Start / Personalized Blending
+        Dynamic NEW / ACTIVE / RETURNING weights
+                +
+        learned LTR feature importance (when trained)
+                ↓
+        Weighted blending
                 ↓
         Business rules
                 ↓
@@ -2067,9 +2080,38 @@ class ClickPersonalizedRecommendationEngine:
                 weights
             )
 
+
+        # ====================================================
+        # DYNAMIC WEIGHT RESOLUTION / LEARNING TO RANK
+        # ====================================================
+        # The resolver first profiles the user as NEW, ACTIVE, or RETURNING.
+        # It applies a segment prior and, when an offline-trained ranker model
+        # exists, blends the ranker's learned gain importance into the live
+        # scoring weights.  The resulting dictionary remains normalized to 1.
+        dynamic_weights_enabled = bool(
+            rule_overrides.pop(
+                "dynamic_weights_enabled",
+                True,
+            )
+        )
+
+        weight_context = (
+            DynamicWeightResolver(
+                enabled=dynamic_weights_enabled
+            )
+            .resolve(
+                self.db,
+                user_id,
+                merged_weights,
+            )
+        )
+
+
         config = EngineConfig(
             weights=
                 merged_weights,
+                weight_context.weights,
+
             total_slots=
                 limit,
             include_random=
@@ -2179,11 +2221,63 @@ class ClickPersonalizedRecommendationEngine:
         )
 
 
-        return (
+        ranked = (
             selector.select(
                 scored
             )
         )
+
+
+        # Attach one request-level weight context to every returned product.
+        # This preserves the existing public return type (List[ScoredProduct])
+        # while allowing the API and audit logger to persist the exact dynamic
+        # weights that produced this ranking.
+        for scored_product in ranked:
+
+            setattr(
+                scored_product,
+                "effective_weights",
+                dict(weight_context.weights),
+            )
+
+            setattr(
+                scored_product,
+                "user_segment",
+                weight_context.user_segment,
+            )
+
+            setattr(
+                scored_product,
+                "weight_strategy",
+                weight_context.strategy,
+            )
+
+            setattr(
+                scored_product,
+                "ltr_model_version",
+                weight_context.ltr_model_version,
+            )
+
+            setattr(
+                scored_product,
+                "ltr_backend",
+                weight_context.ltr_backend,
+            )
+
+            setattr(
+                scored_product,
+                "ltr_model_source",
+                weight_context.model_source,
+            )
+
+            setattr(
+                scored_product,
+                "user_activity_profile",
+                weight_context.activity_profile.as_dict(),
+            )
+
+
+        return ranked
 
 
 # ============================================================
