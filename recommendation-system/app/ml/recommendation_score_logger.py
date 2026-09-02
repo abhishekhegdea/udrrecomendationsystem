@@ -62,7 +62,7 @@ from app.models import (
 # CONFIGURATION
 # ============================================================
 
-ALGORITHM_VERSION = "personalized-click-location-score-v4"
+ALGORITHM_VERSION = "personalized-click-location-dynamic-ltr-v5"
 
 # Recommendation score history is useful for debugging and comparison, but a
 # home-page recommendation call can happen very frequently.  Retaining the
@@ -424,6 +424,10 @@ def persist_recommendation_run(
             float,
         ]
     ] = None,
+    user_segment: Optional[str] = None,
+    weight_strategy: Optional[str] = None,
+    ltr_model_version: Optional[str] = None,
+    ltr_backend: Optional[str] = None,
     algorithm_version: str = ALGORITHM_VERSION,
     retention_days: int = SNAPSHOT_RETENTION_DAYS,
 ) -> str:
@@ -443,7 +447,16 @@ def persist_recommendation_run(
     execution_time_ms:
         Recommendation-engine execution time.
     weights:
-        Recommendation weights used for this run.
+        Exact normalized recommendation weights used for this run.  These may
+        be dynamically resolved from user segment + LTR feature importance.
+    user_segment:
+        NEW / ACTIVE / RETURNING lifecycle segment used for this run.
+    weight_strategy:
+        static_weights, segment_prior_fallback, or ltr_feature_importance.
+    ltr_model_version:
+        Offline ranker version that supplied learned feature importance.
+    ltr_backend:
+        lightgbm / xgboost when a learned model supplied the weights.
     algorithm_version:
         Version marker used to compare historical runs.
     retention_days:
@@ -476,11 +489,49 @@ def persist_recommendation_run(
 
     now = datetime.utcnow()
 
+    first_product = products[0] if products else None
+
+    if first_product is not None:
+        if user_segment is None:
+            user_segment = getattr(
+                first_product,
+                "user_segment",
+                None,
+            )
+        if weight_strategy is None:
+            weight_strategy = getattr(
+                first_product,
+                "weight_strategy",
+                None,
+            )
+        if ltr_model_version is None:
+            ltr_model_version = getattr(
+                first_product,
+                "ltr_model_version",
+                None,
+            )
+        if ltr_backend is None:
+            ltr_backend = getattr(
+                first_product,
+                "ltr_backend",
+                None,
+            )
+
     run = RecommendationRun(
         id=run_id,
         userId=user_id,
         context=context,
         algorithmVersion=algorithm_version,
+        userSegment=(
+            user_segment
+            or "unknown"
+        ),
+        weightStrategy=(
+            weight_strategy
+            or "static_weights"
+        ),
+        ltrModelVersion=ltr_model_version,
+        ltrBackend=ltr_backend,
         totalReturned=len(products),
         executionTimeMs=max(
             0.0,

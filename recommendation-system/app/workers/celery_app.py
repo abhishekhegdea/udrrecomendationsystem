@@ -48,6 +48,17 @@ celery_app.conf.update(
         },
 
         # ---------------------------------------------------------------
+        # Dynamic recommendation weights / Learning-to-Rank retraining
+        # ---------------------------------------------------------------
+        # Runs every 24 hours.
+        # The task itself enforces 90-day lookback, 7-day maturation,
+        # and production minimum training-data thresholds.
+        "retrain-ltr-ranking-models": {
+            "task": "app.workers.tasks.retrain_ltr_models",
+            "schedule": 86400.0,
+        },
+
+        # ---------------------------------------------------------------
         # Existing general behaviour retention
         # ---------------------------------------------------------------
         "cleanup-user-behaviour": {
