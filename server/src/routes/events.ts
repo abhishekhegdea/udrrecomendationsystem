@@ -20,6 +20,7 @@ async function resolveProduct(productId: string) {
     select: {
       categoryId: true,
       sellerId: true,
+      brandId: true,
     },
   });
 
@@ -30,6 +31,7 @@ async function resolveProduct(productId: string) {
   return {
     categoryId: product.categoryId,
     sellerId: product.sellerId,
+    brandId: product.brandId,
   };
 }
 
@@ -68,6 +70,7 @@ router.post('/view', async (req, res) => {
       data: {
         userId: uid,
         productId,
+        categoryId: resolved.categoryId,
         timeSpent:
           timeSpent !== undefined && timeSpent !== null
             ? parseInt(timeSpent)
@@ -89,6 +92,7 @@ router.post('/view', async (req, res) => {
           productId,
           categoryId: resolved.categoryId,
           sellerId: resolved.sellerId,
+          brandId: resolved.brandId,
           source: source || 'product_details',
           metadata: {
             timeSpent:
@@ -169,6 +173,8 @@ router.post('/click', async (req, res) => {
       data: {
         userId: uid,
         productId,
+        categoryId: resolved.categoryId,
+        brandId: resolved.brandId,
         source: source || 'unknown',
       },
     });
@@ -189,6 +195,7 @@ router.post('/click', async (req, res) => {
           productId,
           categoryId: resolved.categoryId,
           sellerId: resolved.sellerId,
+          brandId: resolved.brandId,
           source: source || 'unknown',
           metadata: {
             elementClicked: elementClicked || null,
@@ -213,6 +220,7 @@ router.post('/click', async (req, res) => {
           data: {
             userId: uid,
             productId,
+            categoryId: resolved.categoryId,
             source: source || 'unknown',
             elementClicked: elementClicked || null,
           },
@@ -318,6 +326,7 @@ router.post('/behaviour', async (req, res) => {
     let resolvedProductId: string | null = productId || null;
     let categoryId: string | null = null;
     let sellerId: string | null = null;
+    let brandId: string | null = null;
 
     if (productId) {
       const resolved = await resolveProduct(productId);
@@ -325,6 +334,7 @@ router.post('/behaviour', async (req, res) => {
       if (resolved) {
         categoryId = resolved.categoryId;
         sellerId = resolved.sellerId;
+        brandId = resolved.brandId;
       } else {
         resolvedProductId = null;
       }
@@ -337,6 +347,7 @@ router.post('/behaviour', async (req, res) => {
         productId: resolvedProductId,
         categoryId,
         sellerId,
+        brandId,
         source: source || null,
         metadata: metadata || {},
       },

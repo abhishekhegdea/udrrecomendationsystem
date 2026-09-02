@@ -148,14 +148,27 @@ model DeliveryPartner {
 // --- PRODUCT CATALOG ---
 
 model Category {
-  id             String          @id @default(uuid())
-  name           String          @unique
-  description    String?
-  products       Product[]
-  subcategories  Subcategory[]
-  userBehaviours UserBehaviour[]
-  brandId        String?
-  brand          Brand?          @relation(fields: [brandId], references: [id])
+  id                      String                        @id @default(uuid())
+  name                    String                        @unique
+  description             String?
+  products                Product[]
+  subcategories           Subcategory[]
+  userBehaviours          UserBehaviour[]
+  brandId                 String?
+  brand                   Brand?                        @relation("CategoryToBrand", fields: [brandId], references: [id])
+  brands                  Brand[]                       @relation("BrandToCategory")
+  orders                  Order[]
+  orderItems              OrderItem[]
+  wishlists               Wishlist[]
+  cartItems               CartItem[]
+  ratings                 Rating[]
+  reviews                 Review[]
+  productViews            ProductView[]
+  clickEvents             ClickEvent[]
+  clickRateHistories      ProductClickHistory[]
+  trendingScores          TrendingScore[]
+  seasonalScores          SeasonalScore[]
+  recommendationSnapshots RecommendationScoreSnapshot[]
 }
 
 model Subcategory {
@@ -169,12 +182,15 @@ model Subcategory {
 model Brand {
   id             String          @id @default(uuid())
   name           String          @unique
+  categoryId     String?
+  category       Category?       @relation("BrandToCategory", fields: [categoryId], references: [id])
   products       Product[]
   userBehaviours UserBehaviour[]
-  categories     Category[]
+  categories     Category[]      @relation("CategoryToBrand")
   cartItems      CartItem[]
   orders         Order[]
   orderItems     OrderItem[]
+  wishlists      Wishlist[]
   clickEvents    ClickEvent[]
   ratings        Rating[]
 }
@@ -216,16 +232,19 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  images           ProductImage[]
-  orderItems       OrderItem[]
-  wishlist         Wishlist[]
-  cartItems        CartItem[]
-  ratings          Rating[]
-  reviews          Review[]
-  views            ProductView[]
-  clicks           ClickEvent[]
-  clickRateHistory ProductClickHistory[]
-  userBehaviours   UserBehaviour[]
+  images                  ProductImage[]
+  orderItems              OrderItem[]
+  wishlist                Wishlist[]
+  cartItems               CartItem[]
+  ratings                 Rating[]
+  reviews                 Review[]
+  views                   ProductView[]
+  clicks                  ClickEvent[]
+  clickRateHistory        ProductClickHistory[]
+  userBehaviours          UserBehaviour[]
+  trendingScore           TrendingScore?
+  seasonalScores          SeasonalScore[]
+  recommendationSnapshots RecommendationScoreSnapshot[]
 }
 
 model ProductImage {
@@ -249,9 +268,11 @@ model Order {
   deliveryPartnerId String?
   deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
 
-  items   OrderItem[]
-  brandId String?
-  brand   Brand?      @relation(fields: [brandId], references: [id])
+  items      OrderItem[]
+  brandId    String?
+  brand      Brand?           @relation(fields: [brandId], references: [id])
+  categoryId String?
+  category   Category?        @relation(fields: [categoryId], references: [id])
 }
 
 model OrderItem {
@@ -280,94 +301,112 @@ model OrderItem {
   returnReviewText String? // Private feedback captured at return time
   returnRating     Int? // 1-5 rating given alongside the return
 
-  brandId String?
-  brand   Brand?  @relation(fields: [brandId], references: [id])
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 }
 
 model Wishlist {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  createdAt DateTime @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  createdAt  DateTime  @default(now())
 
   @@unique([userId, productId])
 }
 
 model CartItem {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  brandId   String?
-  brand     Brand?   @relation(fields: [brandId], references: [id])
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  quantity   Int       @default(1)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 
   @@unique([userId, productId])
 }
 
 model Rating {
-  id        String   @id @default(uuid())
-  value     Int // 1 to 5
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  createdAt DateTime @default(now())
-  brandId   String?
-  brand     Brand?   @relation(fields: [brandId], references: [id])
+  id         String    @id @default(uuid())
+  value      Int // 1 to 5
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  createdAt  DateTime  @default(now())
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 }
 
 model Review {
-  id        String   @id @default(uuid())
-  text      String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  createdAt DateTime @default(now())
+  id         String    @id @default(uuid())
+  text       String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  createdAt  DateTime  @default(now())
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 }
 
 // --- USER BEHAVIOUR & ML SIGNALS ---
 
 model ProductView {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   userId      String? // Null if guest
-  user        User?    @relation(fields: [userId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
   productId   String
-  product     Product  @relation(fields: [productId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
   timeSpent   Int? // In seconds
   scrollDepth Int? // Percentage
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 }
 
 model ClickEvent {
-  id        String   @id @default(uuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  source    String? // e.g., 'home_recommendation', 'search_results'
-  createdAt DateTime @default(now())
-  brandId   String?
-  brand     Brand?   @relation(fields: [brandId], references: [id])
+  id         String    @id @default(uuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  source     String? // e.g., 'home_recommendation', 'search_results'
+  createdAt  DateTime  @default(now())
+  brandId    String?
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 }
 
 // Short-lived click history used by the recommendation click-rate feature.
 // Rows are retained for 7 days and removed by the Celery Beat cleanup task.
 model ProductClickHistory {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   userId         String?
-  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   productId      String
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   source         String?
   elementClicked String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   @@index([productId, createdAt])
   @@index([createdAt])
@@ -429,18 +468,24 @@ model RecommendationLog {
 }
 
 model TrendingScore {
-  id        String   @id @default(uuid())
-  productId String   @unique
-  score     Float    @default(0)
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(uuid())
+  productId  String    @unique
+  product    Product   @relation(fields: [productId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  score      Float     @default(0)
+  updatedAt  DateTime  @updatedAt
 }
 
 model SeasonalScore {
-  id        String   @id @default(uuid())
-  productId String
-  season    String // e.g., "Diwali", "Christmas"
-  score     Float    @default(0)
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(uuid())
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  season     String // e.g., "Diwali", "Christmas"
+  score      Float     @default(0)
+  updatedAt  DateTime  @updatedAt
 
   @@unique([productId, season])
 }
@@ -492,6 +537,9 @@ model RecommendationScoreSnapshot {
 
   userId      String
   productId   String
+  product     Product?  @relation(fields: [productId], references: [id])
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
   productName String?
   rank        Int
   source      String?

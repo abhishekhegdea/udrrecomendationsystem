@@ -71,11 +71,18 @@ from app.ml.seller_boost import (
 )
 
 from app.models import (
+    CartItem,
+    ClickEvent,
+    Order,
+    OrderItem,
     Product,
     ProductClickHistory,
     ProductView,
+    Rating,
+    Review,
     Seller,
     UserBehaviour,
+    Wishlist,
 )
 
 
@@ -1393,10 +1400,17 @@ class FeatureComputer:
                 ):
                     content_seed_product = seed
 
-        user_category_ids = (
+        user_category_affinity = (
             self
-            ._get_user_category_ids(
+            ._get_user_category_affinity_scores(
                 user_id
+            )
+        )
+
+        user_category_ids = (
+            set(
+                user_category_affinity
+                .keys()
             )
         )
 
@@ -1526,10 +1540,13 @@ class FeatureComputer:
             # Category
             if (
                 product.categoryId
-                in user_category_ids
+                and product.categoryId
+                in user_category_affinity
             ):
                 scored_product.category_boost = (
-                    0.20
+                    user_category_affinity[
+                        product.categoryId
+                    ]
                 )
 
             # Brand
@@ -1864,31 +1881,117 @@ class FeatureComputer:
         )
 
 
+    def _get_user_category_affinity_scores(
+        self,
+        user_id: str,
+    ) -> Dict[str, float]:
+        category_weights: Dict[str, float] = {}
+
+        # 1. UserBehaviour
+        behaviour_events = (
+            self.db.query(
+                UserBehaviour.categoryId,
+                UserBehaviour.eventType,
+            )
+            .filter(
+                UserBehaviour.userId == user_id,
+                UserBehaviour.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for cat_id, event_type in behaviour_events:
+            w = ENGAGEMENT_EVENT_WEIGHTS.get(event_type, 0.3)
+            category_weights[cat_id] = category_weights.get(cat_id, 0.0) + w
+
+        # 2. ClickEvent
+        click_rows = (
+            self.db.query(ClickEvent.categoryId)
+            .filter(
+                ClickEvent.userId == user_id,
+                ClickEvent.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in click_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 0.3
+
+        # 3. ProductView
+        view_rows = (
+            self.db.query(ProductView.categoryId)
+            .filter(
+                ProductView.userId == user_id,
+                ProductView.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in view_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 0.3
+
+        # 4. OrderItem
+        order_rows = (
+            self.db.query(OrderItem.categoryId)
+            .join(Order, Order.id == OrderItem.orderId)
+            .filter(
+                Order.userId == user_id,
+                OrderItem.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in order_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 1.0
+
+        # 5. CartItem
+        cart_rows = (
+            self.db.query(CartItem.categoryId)
+            .filter(
+                CartItem.userId == user_id,
+                CartItem.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in cart_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 0.8
+
+        # 6. Wishlist
+        wishlist_rows = (
+            self.db.query(Wishlist.categoryId)
+            .filter(
+                Wishlist.userId == user_id,
+                Wishlist.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in wishlist_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 0.6
+
+        # 7. Rating
+        rating_rows = (
+            self.db.query(Rating.categoryId)
+            .filter(
+                Rating.userId == user_id,
+                Rating.categoryId.isnot(None),
+            )
+            .all()
+        )
+        for row in rating_rows:
+            category_weights[row[0]] = category_weights.get(row[0], 0.0) + 0.5
+
+        if not category_weights:
+            return {}
+
+        max_w = max(category_weights.values(), default=1.0)
+        return {
+            cat_id: min(1.0, w / max_w)
+            for cat_id, w in category_weights.items()
+        }
+
     def _get_user_category_ids(
         self,
         user_id: str,
     ) -> Set[str]:
-
-        events = (
-            self.db
-            .query(
-                UserBehaviour.categoryId
-            )
-            .filter(
-                UserBehaviour.userId
-                == user_id,
-
-                UserBehaviour.categoryId
-                .isnot(None),
-            )
-            .distinct()
-            .all()
+        return set(
+            self._get_user_category_affinity_scores(user_id).keys()
         )
-
-        return {
-            event.categoryId
-            for event in events
-        }
 
 
     def _get_user_brand_names(

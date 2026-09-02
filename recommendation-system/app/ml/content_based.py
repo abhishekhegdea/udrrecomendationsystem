@@ -18,6 +18,7 @@ def _get_model():
     global _model
     if _model is None:
         try:
+            # pyrefly: ignore [missing-import]
             from sentence_transformers import SentenceTransformer
 
             _model = SentenceTransformer("all-MiniLM-L6-v2")

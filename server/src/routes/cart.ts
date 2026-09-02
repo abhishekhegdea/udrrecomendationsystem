@@ -39,10 +39,25 @@ router.post('/', async (req, res) => {
     const quantity = Math.max(1, parseInt(req.body.quantity) || 1);
     if (!userId || !productId) return res.status(400).json({ error: 'Missing fields' });
 
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { categoryId: true, brandId: true },
+    });
+
     const cartItem = await prisma.cartItem.upsert({
       where: { userId_productId: { userId, productId } },
-      update: { quantity: { increment: quantity } },
-      create: { userId, productId, quantity },
+      update: {
+        quantity: { increment: quantity },
+        categoryId: product?.categoryId,
+        brandId: product?.brandId,
+      },
+      create: {
+        userId,
+        productId,
+        quantity,
+        categoryId: product?.categoryId,
+        brandId: product?.brandId,
+      },
       include: cartInclude,
     });
     res.status(201).json(cartItem);
@@ -64,10 +79,25 @@ router.put('/:userId/:productId', async (req, res) => {
       return res.status(200).json({ success: true });
     }
 
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { categoryId: true, brandId: true },
+    });
+
     const cartItem = await prisma.cartItem.upsert({
       where: { userId_productId: { userId, productId } },
-      update: { quantity },
-      create: { userId, productId, quantity },
+      update: {
+        quantity,
+        categoryId: product?.categoryId,
+        brandId: product?.brandId,
+      },
+      create: {
+        userId,
+        productId,
+        quantity,
+        categoryId: product?.categoryId,
+        brandId: product?.brandId,
+      },
       include: cartInclude,
     });
     res.status(200).json(cartItem);

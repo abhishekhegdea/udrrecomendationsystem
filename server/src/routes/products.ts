@@ -705,6 +705,11 @@ router.post(
           })
       }
 
+      const product = await prisma.product.findUnique({
+        where: { id: String(productId) },
+        select: { categoryId: true, brandId: true },
+      })
+
       const wishlistItem =
         await prisma.wishlist.upsert({
           where: {
@@ -721,7 +726,10 @@ router.post(
             },
           },
 
-          update: {},
+          update: {
+            categoryId: product?.categoryId,
+            brandId: product?.brandId,
+          },
 
           create: {
             userId:
@@ -733,6 +741,9 @@ router.post(
               String(
                 productId
               ),
+
+            categoryId: product?.categoryId,
+            brandId: product?.brandId,
           },
 
           include: {

@@ -538,6 +538,11 @@ def persist_recommendation_run(
                 "name",
                 None,
             ),
+            categoryId=getattr(
+                product,
+                "categoryId",
+                None,
+            ),
             rank=rank,
             source=getattr(
                 scored_product,

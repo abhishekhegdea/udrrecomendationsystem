@@ -58,7 +58,14 @@ router.post('/checkout', async (req, res) => {
       include: { product: true },
     });
 
-    let lineItems: { productId: string; quantity: number; priceAtBuy: number; cartItemId?: string }[];
+    let lineItems: {
+      productId: string;
+      quantity: number;
+      priceAtBuy: number;
+      cartItemId?: string;
+      categoryId?: string | null;
+      brandId?: string | null;
+    }[];
     let purchasedCartIds: string[] = [];
 
     if (cartRows.length > 0) {
@@ -88,33 +95,45 @@ router.post('/checkout', async (req, res) => {
         quantity: c.quantity,
         priceAtBuy: c.product?.price ?? 0,
         cartItemId: c.id,
+        categoryId: c.categoryId ?? c.product?.categoryId ?? null,
+        brandId: c.brandId ?? c.product?.brandId ?? null,
       }));
       purchasedCartIds = selected.map((c) => c.id);
     } else if (items && items.length) {
       // Legacy fallback — no persisted cart for this user
+      const enrichedItems = [];
       for (const item of items) {
         const product = await prisma.product.findUnique({ where: { id: item.productId } });
         if (!product) {
           return res.status(404).json({ error: `Product not found (ID: ${item.productId}). Your cart may contain items that are no longer available. Please clear your cart and try again.` });
         }
+        enrichedItems.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          priceAtBuy: item.priceAtBuy ?? product.price,
+          categoryId: product.categoryId ?? null,
+          brandId: product.brandId ?? null,
+        });
       }
-      lineItems = items.map((item: any) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        priceAtBuy: item.priceAtBuy,
-      }));
+      lineItems = enrichedItems;
     } else {
       return res.status(400).json({ error: 'Your cart is empty' });
     }
 
-    // Create the order, decrement inventory, and consume the cart atomically
+    // Create the order, decrement inventory, record PURCHASE behaviour, and
+    // consume the cart atomically.
     const order = await prisma.$transaction(async (tx) => {
       // 1. Create Order + items
+      const primaryCategoryId = lineItems[0]?.categoryId ?? null;
+      const primaryBrandId = lineItems[0]?.brandId ?? null;
+
       const newOrder = await tx.order.create({
         data: {
           userId,
           totalAmount,
           status: 'PENDING',
+          categoryId: primaryCategoryId,
+          brandId: primaryBrandId,
           items: { create: lineItems },
         },
         include: { items: true },
@@ -128,7 +147,35 @@ router.post('/checkout', async (req, res) => {
         });
       }
 
-      // 3. Consume the purchased cart rows
+      // 3. Record PURCHASE UserBehaviour for each item so the ML engine
+      //    can use purchase signals with the correct categoryId.
+      for (const item of lineItems) {
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { categoryId: true, sellerId: true, brandId: true },
+        });
+
+        if (product) {
+          await tx.userBehaviour.create({
+            data: {
+              userId,
+              eventType: 'PURCHASE',
+              productId: item.productId,
+              categoryId: product.categoryId,
+              sellerId: product.sellerId,
+              brandId: product.brandId,
+              source: 'checkout',
+              metadata: {
+                orderId: newOrder.id,
+                quantity: item.quantity,
+                priceAtBuy: item.priceAtBuy,
+              },
+            },
+          });
+        }
+      }
+
+      // 4. Consume the purchased cart rows
       if (purchasedCartIds.length > 0) {
         await tx.cartItem.deleteMany({
           where: { id: { in: purchasedCartIds }, userId },

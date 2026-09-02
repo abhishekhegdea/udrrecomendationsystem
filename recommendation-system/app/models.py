@@ -33,6 +33,11 @@ class Brand(Base):
         nullable=False,
     )
 
+    categoryId = Column(
+        String,
+        nullable=True,
+    )
+
 
 class Product(Base):
     __tablename__ = "Product"
@@ -330,6 +335,12 @@ class ProductView(Base):
         default=datetime.utcnow,
     )
 
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
 
 class ClickEvent(Base):
     __tablename__ = "ClickEvent"
@@ -363,6 +374,12 @@ class ClickEvent(Base):
     brandId = Column(
         String,
         ForeignKey("Brand.id"),
+        nullable=True,
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
         nullable=True,
     )
 
@@ -415,6 +432,12 @@ class ProductClickHistory(Base):
         DateTime,
         default=datetime.utcnow,
         index=True,
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
     )
 
 
@@ -483,6 +506,159 @@ class OrderItem(Base):
         String,
         ForeignKey("Brand.id"),
         nullable=True,
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
+
+class CartItem(Base):
+    __tablename__ = "CartItem"
+
+    id = Column(
+        String,
+        primary_key=True,
+    )
+
+    userId = Column(
+        String,
+        ForeignKey("User.id"),
+    )
+
+    productId = Column(
+        String,
+        ForeignKey("Product.id"),
+    )
+
+    quantity = Column(
+        Integer,
+        default=1,
+    )
+
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
+    createdAt = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
+class Wishlist(Base):
+    __tablename__ = "Wishlist"
+
+    id = Column(
+        String,
+        primary_key=True,
+    )
+
+    userId = Column(
+        String,
+        ForeignKey("User.id"),
+    )
+
+    productId = Column(
+        String,
+        ForeignKey("Product.id"),
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
+    createdAt = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
+class Rating(Base):
+    __tablename__ = "Rating"
+
+    id = Column(
+        String,
+        primary_key=True,
+    )
+
+    value = Column(
+        Integer,
+        nullable=False,
+    )
+
+    userId = Column(
+        String,
+        ForeignKey("User.id"),
+    )
+
+    productId = Column(
+        String,
+        ForeignKey("Product.id"),
+    )
+
+    brandId = Column(
+        String,
+        ForeignKey("Brand.id"),
+        nullable=True,
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
+    createdAt = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
+class Review(Base):
+    __tablename__ = "Review"
+
+    id = Column(
+        String,
+        primary_key=True,
+    )
+
+    text = Column(
+        String,
+        nullable=False,
+    )
+
+    userId = Column(
+        String,
+        ForeignKey("User.id"),
+    )
+
+    productId = Column(
+        String,
+        ForeignKey("Product.id"),
+    )
+
+    categoryId = Column(
+        String,
+        ForeignKey("Category.id"),
+        nullable=True,
+    )
+
+    createdAt = Column(
+        DateTime,
+        default=datetime.utcnow,
     )
 
 
@@ -721,6 +897,11 @@ class RecommendationScoreSnapshot(Base):
         String,
         nullable=False,
         index=True,
+    )
+
+    categoryId = Column(
+        String,
+        nullable=True,
     )
 
     productName = Column(
