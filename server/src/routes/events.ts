@@ -35,6 +35,216 @@ async function resolveProduct(productId: string) {
   };
 }
 
+
+// -------------------------------------------------------------------------
+// TRUE RECOMMENDATION CTR ATTRIBUTION
+// -------------------------------------------------------------------------
+//
+// RecommendationLog is used as one compact row per RecommendationRun:
+//
+//   recommendedIds = products that were actually visible to the shopper
+//   clickedIds     = visible recommended products that were clicked
+//
+// Using the RecommendationRun UUID as RecommendationLog.id gives us exact
+// run-level attribution without changing the existing database schema.
+//
+// A click is allowed to count toward CTR only when the product really existed
+// in the persisted RecommendationScoreSnapshot for that user + run.
+
+async function validateRecommendationExposure(
+  recommendationRunId: string,
+  userId: string,
+  productId: string,
+) {
+  const snapshot = await prisma.recommendationScoreSnapshot.findFirst({
+    where: {
+      runId: recommendationRunId,
+      userId,
+      productId,
+    },
+    select: {
+      rank: true,
+    },
+  });
+
+  if (!snapshot) {
+    return null;
+  }
+
+  const run = await prisma.recommendationRun.findUnique({
+    where: {
+      id: recommendationRunId,
+    },
+    select: {
+      userId: true,
+      context: true,
+    },
+  });
+
+  if (!run || run.userId !== userId) {
+    return null;
+  }
+
+  return {
+    context: run.context || 'home',
+    rank: snapshot.rank,
+  };
+}
+
+async function recordRecommendationImpression(
+  recommendationRunId: string,
+  userId: string,
+  productId: string,
+  context?: string,
+) {
+  const valid = await validateRecommendationExposure(
+    recommendationRunId,
+    userId,
+    productId,
+  );
+
+  if (!valid) {
+    return false;
+  }
+
+  const resolvedContext = context || valid.context || 'home';
+
+  await prisma.recommendationLog.upsert({
+    where: {
+      id: recommendationRunId,
+    },
+    create: {
+      id: recommendationRunId,
+      userId,
+      recommendedIds: [productId],
+      clickedIds: [],
+      context: resolvedContext,
+    },
+    update: {
+      context: resolvedContext,
+    },
+  });
+
+  // Idempotent append. Re-renders / repeated IntersectionObserver callbacks do
+  // not create additional impressions for the same product in the same run.
+  await prisma.$executeRaw`
+    UPDATE "RecommendationLog"
+    SET "recommendedIds" = CASE
+      WHEN ${productId} = ANY("recommendedIds")
+        THEN "recommendedIds"
+      ELSE array_append("recommendedIds", ${productId})
+    END
+    WHERE "id" = ${recommendationRunId}
+      AND "userId" = ${userId}
+  `;
+
+  return true;
+}
+
+async function recordRecommendationCtrClick(
+  recommendationRunId: string,
+  userId: string,
+  productId: string,
+  context?: string,
+) {
+  const valid = await validateRecommendationExposure(
+    recommendationRunId,
+    userId,
+    productId,
+  );
+
+  if (!valid) {
+    return false;
+  }
+
+  const resolvedContext = context || valid.context || 'home';
+
+  // A click logically implies that the product was visible. Therefore create
+  // both arrays when the impression request and the click request race.
+  await prisma.recommendationLog.upsert({
+    where: {
+      id: recommendationRunId,
+    },
+    create: {
+      id: recommendationRunId,
+      userId,
+      recommendedIds: [productId],
+      clickedIds: [productId],
+      context: resolvedContext,
+    },
+    update: {
+      context: resolvedContext,
+    },
+  });
+
+  // Keep numerator and denominator idempotent at run-product level.
+  await prisma.$executeRaw`
+    UPDATE "RecommendationLog"
+    SET
+      "recommendedIds" = CASE
+        WHEN ${productId} = ANY("recommendedIds")
+          THEN "recommendedIds"
+        ELSE array_append("recommendedIds", ${productId})
+      END,
+      "clickedIds" = CASE
+        WHEN ${productId} = ANY("clickedIds")
+          THEN "clickedIds"
+        ELSE array_append("clickedIds", ${productId})
+      END
+    WHERE "id" = ${recommendationRunId}
+      AND "userId" = ${userId}
+  `;
+
+  return true;
+}
+
+// -------------------------------------------------------------------------
+// RECOMMENDATION IMPRESSION
+// -------------------------------------------------------------------------
+
+router.post('/recommendation-impression', async (req, res) => {
+  try {
+    const {
+      userId,
+      productId,
+      recommendationRunId,
+      context,
+    } = req.body;
+
+    if (!userId || !productId || !recommendationRunId) {
+      return res.status(400).json({
+        error: 'userId, productId and recommendationRunId are required',
+      });
+    }
+
+    const recorded = await recordRecommendationImpression(
+      String(recommendationRunId),
+      String(userId),
+      String(productId),
+      typeof context === 'string' ? context : undefined,
+    );
+
+    if (!recorded) {
+      return res.status(200).json({
+        skipped: true,
+        reason: 'invalid_recommendation_attribution',
+      });
+    }
+
+    return res.status(201).json({
+      recorded: true,
+      recommendationRunId,
+      productId,
+    });
+  } catch (error) {
+    console.error('Track recommendation impression error:', error);
+
+    return res.status(500).json({
+      error: 'Failed to track recommendation impression',
+    });
+  }
+});
+
 // -------------------------------------------------------------------------
 // PRODUCT VIEW
 // -------------------------------------------------------------------------
@@ -144,6 +354,8 @@ router.post('/click', async (req, res) => {
       productId,
       source,
       elementClicked,
+      recommendationRunId,
+      recommendationContext,
     } = req.body;
 
     if (!productId) {
@@ -199,15 +411,18 @@ router.post('/click', async (req, res) => {
           source: source || 'unknown',
           metadata: {
             elementClicked: elementClicked || null,
+            recommendationRunId: recommendationRunId || null,
           },
         },
       });
     }
 
     /*
-     * 3. New ProductClickHistory record.
+     * 3. Existing ProductClickHistory record.
      *
-     * This is the table used by the recommendation equation.
+     * Retained for short-lived click analytics and backwards compatibility.
+     * True recommendation CTR is now calculated from RecommendationLog, where
+     * we have both visible impressions and attributed clicks.
      *
      * We only insert when the user is actually discovering/opening a
      * product. Clicking Add to Cart is deliberately not counted here.
@@ -238,6 +453,32 @@ router.post('/click', async (req, res) => {
     }
 
     const [createdClick] = await Promise.all(promises);
+
+    // True CTR numerator. Only genuine discovery clicks from a validated
+    // recommendation run are counted. This is intentionally separate from
+    // Cart/Wishlist/Purchase signals.
+    if (
+      shouldCountForClickRate &&
+      uid &&
+      recommendationRunId
+    ) {
+      try {
+        await recordRecommendationCtrClick(
+          String(recommendationRunId),
+          String(uid),
+          String(productId),
+          typeof recommendationContext === 'string'
+            ? recommendationContext
+            : undefined,
+        );
+      } catch (ctrError) {
+        // Analytics must never break the user's click/navigation.
+        console.warn(
+          'Recommendation CTR attribution failed:',
+          ctrError,
+        );
+      }
+    }
 
     return res.status(201).json(createdClick);
   } catch (error) {

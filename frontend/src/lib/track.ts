@@ -9,7 +9,8 @@
  *
  *   1. ClickEvent
  *   2. UserBehaviour
- *   3. ProductClickHistory
+ *   3. ProductClickHistory (legacy short-lived click analytics)
+ *   4. Exact RecommendationLog CTR attribution when recommendationRunId exists
  *
  * Therefore also sending CLICK to FastAPI would duplicate the same click
  * inside UserBehaviour.
@@ -66,11 +67,15 @@ export function trackClick(
   opts?: {
     source?: string
     elementClicked?: string
+    recommendationRunId?: string
+    recommendationContext?: string
   }
 ) {
   const {
     source = 'unknown',
     elementClicked,
+    recommendationRunId,
+    recommendationContext,
   } = opts || {}
 
   /*
@@ -83,7 +88,75 @@ export function trackClick(
     productId,
     source,
     elementClicked: elementClicked ?? null,
-  }).catch(() => {})
+    recommendationRunId: recommendationRunId ?? null,
+    recommendationContext: recommendationContext ?? null,
+  })
+    .then((response) => {
+      if (recommendationRunId) {
+        console.log('[CTR click recorded]', {
+          userId: userId ?? null,
+          productId,
+          recommendationRunId,
+          recommendationContext,
+          elementClicked: elementClicked ?? null,
+          response: response.data,
+        })
+      }
+    })
+    .catch((error) => {
+      if (recommendationRunId) {
+        console.error('[CTR click failed]', {
+          userId: userId ?? null,
+          productId,
+          recommendationRunId,
+          recommendationContext,
+          elementClicked: elementClicked ?? null,
+          error,
+        })
+      }
+    })
+}
+
+// --------------------------------------------------------------------------
+// TRUE RECOMMENDATION IMPRESSION / CTR DENOMINATOR
+// --------------------------------------------------------------------------
+
+export function trackRecommendationImpression(
+  userId: string,
+  productId: string,
+  recommendationRunId: string,
+  opts?: {
+    context?: string
+  }
+) {
+  const {
+    context = 'home',
+  } = opts || {}
+
+  api.post(`${NODE_API}/recommendation-impression`, {
+    userId,
+    productId,
+    recommendationRunId,
+    context,
+  })
+    .then((response) => {
+      console.log('[CTR impression recorded]', {
+        userId,
+        productId,
+        recommendationRunId,
+        context,
+        response: response.data,
+      })
+    })
+    .catch((error) => {
+      console.error('[CTR impression failed]', {
+        userId,
+        productId,
+        recommendationRunId,
+        context,
+        error,
+      })
+    })
 }
 
 // --------------------------------------------------------------------------

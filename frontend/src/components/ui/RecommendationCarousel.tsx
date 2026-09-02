@@ -16,7 +16,12 @@ import { ProductCard } from './ProductCard'
 import { getProductImageUrl } from '@/lib/utils'
 
 const NODE_API = 'http://localhost:3001'
-const FETCH_TIMEOUT_MS = 5000
+
+// Personalized /home recommendations can take longer because they run
+// ML scoring, CTR lookup, location ranking, dynamic weights, and audit writes.
+// Keep shorter timeouts for lightweight recommendation/fallback endpoints.
+const DEFAULT_FETCH_TIMEOUT_MS = 8000
+const HOME_FETCH_TIMEOUT_MS = 30000
 
 interface RecommendationCarouselProps {
   title: string
@@ -70,6 +75,11 @@ interface RecommendationProduct {
   seller_distance_km?: number | null
   nearby_seller?: boolean
   location_priority_applied?: boolean
+
+  // Exact recommendation exposure context used for true CTR tracking.
+  recommendation_run_id?: string
+  recommendation_user_id?: string
+  recommendation_context?: string
 
   [key: string]: unknown
 }
@@ -501,7 +511,7 @@ export function RecommendationCarousel({
                 signal,
 
                 timeout:
-                  FETCH_TIMEOUT_MS,
+                  DEFAULT_FETCH_TIMEOUT_MS,
               }
             )
 
@@ -596,7 +606,11 @@ export function RecommendationCarousel({
                   controller.signal,
 
                 timeout:
-                  FETCH_TIMEOUT_MS,
+                  endpoint.startsWith(
+                    '/home/'
+                  )
+                    ? HOME_FETCH_TIMEOUT_MS
+                    : DEFAULT_FETCH_TIMEOUT_MS,
               }
             )
 
@@ -631,6 +645,31 @@ export function RecommendationCarousel({
               string,
               unknown
             >
+
+          // Home recommendations already expose the exact persisted
+          // RecommendationRun UUID. Carry it into each ProductCard so a card
+          // is counted as an impression only when it actually becomes visible,
+          // and a later click can be attributed to the same run.
+          const recommendationRunId =
+            typeof data.recommendation_run_id === 'string' &&
+            data.recommendation_run_id.trim().length > 0
+              ? data.recommendation_run_id
+              : undefined
+
+          const recommendationUserId =
+            typeof data.user_id === 'string' &&
+            data.user_id.trim().length > 0
+              ? data.user_id
+              : undefined
+
+          const recommendationContext =
+            recommendationRunId
+              ? (
+                  endpoint.startsWith('/home/')
+                    ? 'home'
+                    : 'recommendation'
+                )
+              : undefined
 
           /**
            * Different recommendation endpoints may return
@@ -813,6 +852,15 @@ export function RecommendationCarousel({
                     'number'
                       ? item.click_rate_score
                       : undefined,
+
+                  recommendation_run_id:
+                    recommendationRunId,
+
+                  recommendation_user_id:
+                    recommendationUserId,
+
+                  recommendation_context:
+                    recommendationContext,
                 }
               })
 
@@ -1019,6 +1067,7 @@ export function RecommendationCarousel({
           <>
             <div
               ref={scrollRef}
+              data-recommendation-scroll-root="true"
               onMouseDown={
                 handleMouseDown
               }
