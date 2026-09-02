@@ -5,14 +5,14 @@ async function main() {
   const productsNullCat = await prisma.product.count({ where: { categoryId: { equals: undefined } } });
   const productsNullBrandId = await prisma.product.count({ where: { brandId: null } });
   const productsWithBrandString = await prisma.product.count({ where: { brand: { not: null } } });
-  
+
   const brandsTotal = await prisma.brand.count();
   const brandsNullCat = await prisma.brand.count({ where: { categoryId: null } });
-  
+
   const ordersTotal = await prisma.order.count();
   const ordersNullCat = await prisma.order.count({ where: { categoryId: null } });
   const ordersNullBrand = await prisma.order.count({ where: { brandId: null } });
-  
+
   const orderItemsTotal = await prisma.orderItem.count();
   const orderItemsNullCat = await prisma.orderItem.count({ where: { categoryId: null } });
   const orderItemsNullBrand = await prisma.orderItem.count({ where: { brandId: null } });

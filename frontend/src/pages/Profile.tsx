@@ -187,18 +187,18 @@ export function ProfilePage() {
     dateJoined:
       user?.createdAt
         ? new Date(
-            user.createdAt
-          ).toLocaleDateString()
+          user.createdAt
+        ).toLocaleDateString()
         : 'Recently',
 
     partnerId:
       user?.id
         ? `ID-${user.id
-            .substring(
-              0,
-              6
-            )
-            .toUpperCase()}`
+          .substring(
+            0,
+            6
+          )
+          .toUpperCase()}`
         : 'N/A',
 
     status:
@@ -301,19 +301,19 @@ export function ProfilePage() {
         },
 
         ...(user?.role !==
-        'CUSTOMER'
+          'CUSTOMER'
           ? [
-              {
-                icon:
-                  Award,
+            {
+              icon:
+                Award,
 
-                label:
-                  'Profile ID',
+              label:
+                'Profile ID',
 
-                value:
-                  profileData.partnerId,
-              },
-            ]
+              value:
+                profileData.partnerId,
+            },
+          ]
           : []),
 
         {
@@ -386,40 +386,40 @@ export function ProfilePage() {
     },
 
     ...(user?.role ===
-    'DELIVERY'
+      'DELIVERY'
       ? [
-          {
-            title:
-              'Vehicle & Emergency',
+        {
+          title:
+            'Vehicle & Emergency',
 
-            icon:
-              Shield,
+          icon:
+            Shield,
 
-            items: [
-              {
-                icon:
-                  Car,
+          items: [
+            {
+              icon:
+                Car,
 
-                label:
-                  'Vehicle',
+              label:
+                'Vehicle',
 
-                value:
-                  `${profileData.vehicleType} — ${profileData.vehicleNumber}`,
-              },
+              value:
+                `${profileData.vehicleType} — ${profileData.vehicleNumber}`,
+            },
 
-              {
-                icon:
-                  PhoneCall,
+            {
+              icon:
+                PhoneCall,
 
-                label:
-                  'Emergency Contact',
+              label:
+                'Emergency Contact',
 
-                value:
-                  `${profileData.emergencyContactName} (${profileData.emergencyContactNumber})`,
-              },
-            ],
-          },
-        ]
+              value:
+                `${profileData.emergencyContactName} (${profileData.emergencyContactNumber})`,
+            },
+          ],
+        },
+      ]
       : []),
   ]
 
@@ -513,51 +513,51 @@ export function ProfilePage() {
               <p className="text-ink/80 text-sm mt-3 flex items-center gap-1.5 justify-center sm:justify-start font-medium">
                 {user?.role ===
                   'SELLER' && (
-                  <>
-                    <Award className="h-4 w-4 text-ink" />
+                    <>
+                      <Award className="h-4 w-4 text-ink" />
 
-                    Artisan Seller
-                    since{' '}
-                    {
-                      profileData.dateJoined
-                    }
-                  </>
-                )}
+                      Artisan Seller
+                      since{' '}
+                      {
+                        profileData.dateJoined
+                      }
+                    </>
+                  )}
 
                 {user?.role ===
                   'DELIVERY' && (
-                  <>
-                    <Truck className="h-4 w-4 text-ink" />
+                    <>
+                      <Truck className="h-4 w-4 text-ink" />
 
-                    Shipping
-                    Partner since{' '}
-                    {
-                      profileData.dateJoined
-                    }
-                  </>
-                )}
+                      Shipping
+                      Partner since{' '}
+                      {
+                        profileData.dateJoined
+                      }
+                    </>
+                  )}
 
                 {user?.role ===
                   'CUSTOMER' && (
-                  <>
-                    <ShoppingBag className="h-4 w-4 text-ink" />
+                    <>
+                      <ShoppingBag className="h-4 w-4 text-ink" />
 
-                    Member since{' '}
-                    {
-                      profileData.dateJoined
-                    }
-                  </>
-                )}
+                      Member since{' '}
+                      {
+                        profileData.dateJoined
+                      }
+                    </>
+                  )}
 
                 {user?.role ===
                   'ADMIN' && (
-                  <>
-                    <Shield className="h-4 w-4 text-ink" />
+                    <>
+                      <Shield className="h-4 w-4 text-ink" />
 
-                    System
-                    Administrator
-                  </>
-                )}
+                      System
+                      Administrator
+                    </>
+                  )}
               </p>
             </div>
           </div>
@@ -565,39 +565,39 @@ export function ProfilePage() {
           {user?.role !==
             'CUSTOMER' &&
             user?.role !==
-              'ADMIN' && (
+            'ADMIN' && (
               <div className="mt-6 pt-6 border-t border-white/20 flex items-center justify-center sm:justify-start gap-8">
                 {[
                   ...(user?.role ===
-                  'DELIVERY'
+                    'DELIVERY'
                     ? [
-                        {
-                          value:
-                            (
-                              profileData.deliveries ??
-                              0
-                            ).toLocaleString(),
+                      {
+                        value:
+                          (
+                            profileData.deliveries ??
+                            0
+                          ).toLocaleString(),
 
-                          label:
-                            'Deliveries',
-                        },
-                      ]
+                        label:
+                          'Deliveries',
+                      },
+                    ]
                     : []),
 
                   ...(user?.role ===
-                  'SELLER'
+                    'SELLER'
                     ? [
-                        {
-                          value:
-                            (
-                              profileData.orders ??
-                              0
-                            ).toLocaleString(),
+                      {
+                        value:
+                          (
+                            profileData.orders ??
+                            0
+                          ).toLocaleString(),
 
-                          label:
-                            'Orders',
-                        },
-                      ]
+                        label:
+                          'Orders',
+                      },
+                    ]
                     : []),
 
                   {
@@ -917,85 +917,85 @@ export function ProfilePage() {
 
             {user?.role !==
               'SELLER' && (
-              <>
-                <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">
-                  Vehicle
-                  Details
-                </h3>
+                <>
+                  <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">
+                    Vehicle
+                    Details
+                  </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="text-[13px] font-medium text-muted-foreground ml-1">
-                      Vehicle
-                      Type
-                    </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-[13px] font-medium text-muted-foreground ml-1">
+                        Vehicle
+                        Type
+                      </label>
 
-                    <select
+                      <select
+                        value={
+                          formData.vehicleType
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setFormData(
+                            {
+                              ...formData,
+
+                              vehicleType:
+                                event
+                                  .target
+                                  .value,
+                            }
+                          )
+                        }
+                        className="flex h-[52px] w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground"
+                      >
+                        <option value="Bike">
+                          Bike
+                        </option>
+
+                        <option value="Scooter">
+                          Scooter
+                        </option>
+
+                        <option value="Bicycle">
+                          Bicycle
+                        </option>
+
+                        <option value="Electric Vehicle">
+                          Electric
+                          Vehicle
+                        </option>
+
+                        <option value="Car">
+                          Car
+                        </option>
+                      </select>
+                    </div>
+
+                    <Input
+                      label="Vehicle Number"
                       value={
-                        formData.vehicleType
+                        formData.vehicleNumber
                       }
                       onChange={(
-                        event
+                        event: React.ChangeEvent<HTMLInputElement>
                       ) =>
                         setFormData(
                           {
                             ...formData,
 
-                            vehicleType:
+                            vehicleNumber:
                               event
                                 .target
                                 .value,
                           }
                         )
                       }
-                      className="flex h-[52px] w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground"
-                    >
-                      <option value="Bike">
-                        Bike
-                      </option>
-
-                      <option value="Scooter">
-                        Scooter
-                      </option>
-
-                      <option value="Bicycle">
-                        Bicycle
-                      </option>
-
-                      <option value="Electric Vehicle">
-                        Electric
-                        Vehicle
-                      </option>
-
-                      <option value="Car">
-                        Car
-                      </option>
-                    </select>
+                    />
                   </div>
-
-                  <Input
-                    label="Vehicle Number"
-                    value={
-                      formData.vehicleNumber
-                    }
-                    onChange={(
-                      event: React.ChangeEvent<HTMLInputElement>
-                    ) =>
-                      setFormData(
-                        {
-                          ...formData,
-
-                          vehicleNumber:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
-                    }
-                  />
-                </div>
-              </>
-            )}
+                </>
+              )}
 
             <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2 mt-6">
               Emergency
