@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 
 from app.ml.learning_to_rank import (
+    CTR_ALGORITHM_VERSION,
     DynamicWeightResolver,
     LTR_FEATURE_KEYS,
     USER_SEGMENT_ACTIVE,
@@ -85,8 +86,10 @@ def test_resolver_reads_segment_model_metadata(tmp_path, monkeypatch):
 
     (segment_dir / "metadata.json").write_text(
         json.dumps({
+            "algorithm_version": CTR_ALGORITHM_VERSION,
             "model_version": "lightgbm-active-test",
             "backend": "lightgbm",
+            "training_groups": 1000,
             "feature_importance": importance,
         }),
         encoding="utf-8",

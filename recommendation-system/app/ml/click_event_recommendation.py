@@ -2208,7 +2208,6 @@ class ClickPersonalizedRecommendationEngine:
 
         config = EngineConfig(
             weights=
-                merged_weights,
                 weight_context.weights,
 
             total_slots=
