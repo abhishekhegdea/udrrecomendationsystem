@@ -234,6 +234,38 @@ def format_product(
     )
 
 
+    product_impressions_7d = int(
+        getattr(
+            product,
+            "product_impressions_7d",
+            0,
+        )
+        or 0
+    )
+
+
+    product_ctr = (
+        _safe_float(
+            getattr(
+                product,
+                "product_ctr",
+                0.0,
+            )
+        )
+    )
+
+
+    product_ctr_smoothed = (
+        _safe_float(
+            getattr(
+                product,
+                "product_ctr_smoothed",
+                0.0,
+            )
+        )
+    )
+
+
     engagement_score = (
         _safe_float(
             getattr(
@@ -342,10 +374,10 @@ def format_product(
             ),
 
         # ====================================================
-        # PRODUCT CLICK POPULARITY
+        # TRUE RECOMMENDATION CLICK THROUGH RATE (CTR)
         # ====================================================
 
-        # Backward compatibility
+        # Internal feature-key compatibility.
         "click_rate_score":
             round(
                 click_rate_score,
@@ -357,17 +389,20 @@ def format_product(
                 click_rate_score
             ),
 
-        # Better descriptive name
-        "product_click_popularity_score":
+        # Clear public names.
+        "ctr_score":
             round(
                 click_rate_score,
                 6,
             ),
 
-        "product_click_popularity_percentage":
+        "ctr_score_percentage":
             _percentage(
                 click_rate_score
             ),
+
+        "product_impressions_7d":
+            product_impressions_7d,
 
         "product_clicks_7d":
             int(
@@ -377,6 +412,28 @@ def format_product(
                     0,
                 )
                 or 0
+            ),
+
+        "product_ctr":
+            round(
+                product_ctr,
+                6,
+            ),
+
+        "product_ctr_percentage":
+            _percentage(
+                product_ctr
+            ),
+
+        "product_ctr_smoothed":
+            round(
+                product_ctr_smoothed,
+                6,
+            ),
+
+        "product_ctr_smoothed_percentage":
+            _percentage(
+                product_ctr_smoothed
             ),
 
         "product_clicks_per_day":
@@ -389,6 +446,18 @@ def format_product(
                     )
                 ),
                 6,
+            ),
+
+        # Deprecated aliases retained so older UI/debug consumers do not break.
+        "product_click_popularity_score":
+            round(
+                click_rate_score,
+                6,
+            ),
+
+        "product_click_popularity_percentage":
+            _percentage(
+                click_rate_score
             ),
 
         # ====================================================
@@ -953,6 +1022,38 @@ def get_home_recommendations(
         )
 
 
+        product_impressions_7d = int(
+            getattr(
+                scored_product,
+                "product_impressions_7d",
+                0,
+            )
+            or 0
+        )
+
+
+        product_ctr = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "product_ctr",
+                    0.0,
+                )
+            )
+        )
+
+
+        product_ctr_smoothed = (
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "product_ctr_smoothed",
+                    0.0,
+                )
+            )
+        )
+
+
         # ====================================================
         # USER CLICK AFFINITY
         # ====================================================
@@ -1183,9 +1284,68 @@ def get_home_recommendations(
 
 
             # =================================================
-            # PRODUCT CLICK POPULARITY
+            # TRUE RECOMMENDATION CTR
             # =================================================
 
+            "ctr_score":
+                round(
+                    click_popularity_score,
+                    6,
+                ),
+
+            "ctr_score_percentage":
+                _percentage(
+                    click_popularity_score
+                ),
+
+            "product_impressions_7d":
+                product_impressions_7d,
+
+            "product_clicks_7d":
+                product_clicks_7d,
+
+            "product_ctr":
+                round(
+                    product_ctr,
+                    6,
+                ),
+
+            "product_ctr_percentage":
+                _percentage(
+                    product_ctr
+                ),
+
+            "product_ctr_smoothed":
+                round(
+                    product_ctr_smoothed,
+                    6,
+                ),
+
+            "product_ctr_smoothed_percentage":
+                _percentage(
+                    product_ctr_smoothed
+                ),
+
+            "product_clicks_per_day":
+                round(
+                    product_clicks_per_day,
+                    6,
+                ),
+
+            "ctr_weight_percentage":
+                _weight_percentage(
+                    "click_rate",
+                    effective_weights,
+                ),
+
+            "ctr_contribution_percentage":
+                _contribution_percentage(
+                    click_popularity_score,
+                    "click_rate",
+                    effective_weights,
+                ),
+
+            # Deprecated names retained for compatibility with existing audit UI.
             "product_click_popularity":
                 round(
                     click_popularity_score,
@@ -1195,15 +1355,6 @@ def get_home_recommendations(
             "product_click_popularity_percentage":
                 _percentage(
                     click_popularity_score
-                ),
-
-            "product_clicks_7d":
-                product_clicks_7d,
-
-            "product_clicks_per_day":
-                round(
-                    product_clicks_per_day,
-                    6,
                 ),
 
             "product_click_popularity_weight_percentage":
@@ -1216,9 +1367,8 @@ def get_home_recommendations(
                 _contribution_percentage(
                     click_popularity_score,
                     "click_rate",
-                        effective_weights,
+                    effective_weights,
                 ),
-
 
             # =================================================
             # BACKWARD-COMPATIBLE CLICK RATE NAMES
@@ -1622,6 +1772,27 @@ def get_home_recommendations(
 
         setattr(
             product,
+            "product_impressions_7d",
+            product_impressions_7d,
+        )
+
+
+        setattr(
+            product,
+            "product_ctr",
+            product_ctr,
+        )
+
+
+        setattr(
+            product,
+            "product_ctr_smoothed",
+            product_ctr_smoothed,
+        )
+
+
+        setattr(
+            product,
             "user_click_affinity_score",
             user_click_affinity_score,
         )
@@ -1848,7 +2019,16 @@ def get_home_recommendations(
             CLICK_EVENT_WINDOW_DAYS,
 
         "click_rate_source":
-            "ClickEvent",
+            "RecommendationLog visible impressions / attributed clicks",
+
+        "ctr_definition":
+            "clicks / visible recommendation impressions",
+
+        "ctr_weight_percentage":
+            _weight_percentage(
+                "click_rate",
+                effective_weights,
+            ),
 
         "product_click_popularity_weight_percentage":
             _weight_percentage(

@@ -57,6 +57,12 @@ LTR_FEATURE_KEYS: Tuple[str, ...] = (
 )
 
 
+# Feature-contract version. In CTR v6 the existing ``click_rate`` key changed
+# from click-volume popularity to true recommendation CTR. Model bundles from
+# v5 must therefore never supply learned importance to v6 serving.
+CTR_ALGORITHM_VERSION = "personalized-click-location-dynamic-ltr-ctr-v6"
+
+
 USER_SEGMENT_NEW = "new"
 USER_SEGMENT_ACTIVE = "active"
 USER_SEGMENT_RETURNING = "returning"
@@ -530,6 +536,15 @@ class DynamicWeightResolver:
             payload = _read_metadata(path)
 
             if payload is None:
+                continue
+
+            # Reject a model bundle trained under a different feature meaning.
+            # Old v5 metadata has no algorithm_version and is intentionally
+            # treated as incompatible with true-CTR serving.
+            if str(
+                payload.get("algorithm_version")
+                or ""
+            ) != CTR_ALGORITHM_VERSION:
                 continue
 
             try:

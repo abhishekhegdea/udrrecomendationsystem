@@ -87,6 +87,12 @@ LABELS = {
     "PURCHASE": 4,
 }
 
+
+# The meaning of the historical ``click_rate`` feature changed in CTR v6:
+# v5 = click-volume popularity; v6 = true impressions-to-clicks probability.
+# Never mix those two feature definitions in the same LTR training set.
+CTR_ALGORITHM_VERSION = "personalized-click-location-dynamic-ltr-ctr-v6"
+
 # Development-only events created by generate_ltr_test_data.py.
 # Production training ignores them unless --include-synthetic is explicitly used.
 SYNTHETIC_LTR_SOURCE = "ltr_synthetic_test"
@@ -197,6 +203,7 @@ def load_training_groups(
     label_window_days: int,
     max_groups: Optional[int],
     include_synthetic: bool = False,
+    algorithm_version: Optional[str] = CTR_ALGORITHM_VERSION,
 ) -> List[Dict[str, object]]:
     """
     Load only fully matured recommendation groups.
@@ -233,7 +240,15 @@ def load_training_groups(
             RecommendationRun.createdAt >= cutoff,
             RecommendationRun.createdAt <= matured_before,
         )
-        .order_by(RecommendationRun.createdAt.asc())
+    )
+
+    if algorithm_version:
+        query = query.filter(
+            RecommendationRun.algorithmVersion == algorithm_version
+        )
+
+    query = query.order_by(
+        RecommendationRun.createdAt.asc()
     )
 
     if max_groups is not None and max_groups > 0:
@@ -424,6 +439,7 @@ def save_model_bundle(
         "model_version": model_version,
         "backend": backend,
         "segment": segment,
+        "algorithm_version": CTR_ALGORITHM_VERSION,
         "trained_at": datetime.utcnow().isoformat() + "Z",
         "feature_keys": list(LTR_FEATURE_KEYS),
         "feature_importance": importance_map,
@@ -576,6 +592,7 @@ def main() -> int:
     print(f"  min_segment_groups    : {min_segment_groups}")
     print(f"  model_dir             : {args.model_dir}")
     print(f"  include_synthetic     : {args.include_synthetic}")
+    print(f"  algorithm_version     : {CTR_ALGORITHM_VERSION}")
 
     db = SessionLocal()
     try:

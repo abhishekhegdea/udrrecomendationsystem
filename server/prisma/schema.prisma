@@ -270,9 +270,9 @@ model Order {
 
   items      OrderItem[]
   brandId    String?
-  brand      Brand?           @relation(fields: [brandId], references: [id])
+  brand      Brand?      @relation(fields: [brandId], references: [id])
   categoryId String?
-  category   Category?        @relation(fields: [categoryId], references: [id])
+  category   Category?   @relation(fields: [categoryId], references: [id])
 }
 
 model OrderItem {

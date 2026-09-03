@@ -62,7 +62,7 @@ from app.models import (
 # CONFIGURATION
 # ============================================================
 
-ALGORITHM_VERSION = "personalized-click-location-dynamic-ltr-v5"
+ALGORITHM_VERSION = "personalized-click-location-dynamic-ltr-ctr-v6"
 
 # Recommendation score history is useful for debugging and comparison, but a
 # home-page recommendation call can happen very frequently.  Retaining the

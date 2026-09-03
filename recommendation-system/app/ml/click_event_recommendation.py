@@ -3,9 +3,10 @@ ClickEvent-driven recommendation extension for UdrCrafts.
 
 This module adds TWO separate click signals:
 
-1. Product Click Popularity (4%)
-   - Measures how much the candidate product itself was clicked by all users
-     during the last 7 days.
+1. True Recommendation Click Through Rate / CTR (4%)
+   - Measures the probability that a recommendation impression becomes a
+     genuine product-discovery click during the last 7 days.
+   - Uses RecommendationLog impressions + clicks with Bayesian smoothing.
 
 2. User Click Affinity (10%)
    - Measures how similar a candidate is to products THIS user clicked
@@ -28,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import func
+from sqlalchemy import bindparam, func, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.ml.content_based import get_similar_products
@@ -84,6 +85,15 @@ from app.ml.cold_start import (
 
 CLICK_EVENT_WINDOW_DAYS = 7
 
+# True CTR uses the same rolling window as the existing click signals.
+CTR_PRIOR_MEAN = 0.05
+CTR_PRIOR_STRENGTH = 20.0
+
+# The raw/smoothed CTR is a probability (typically a few percent), while the
+# recommendation blender expects each feature score on roughly a 0..1 scale.
+# A 20% smoothed CTR therefore maps to a full CTR feature score of 1.0.
+CTR_SCORE_REFERENCE = 0.20
+
 CLICK_AFFINITY_RECENCY_HALFLIFE_DAYS = 2.0
 
 CLICK_AFFINITY_MAX_SEEDS = 5
@@ -97,12 +107,11 @@ CLICK_AFFINITY_CANDIDATES_PER_SEED = 10
 
 # Total = 1.00
 #
-# click_rate is retained internally for backward compatibility.
-# It now means:
+# click_rate is retained as the internal feature key for backward compatibility
+# with the dynamic-weight / LTR feature contract. It now represents TRUE
+# recommendation CTR rather than click-volume popularity.
 #
-#     Product Click Popularity
-#
-# User Click Affinity is a new independent personalised KPI.
+# User Click Affinity remains a separate personalised KPI.
 
 PERSONALIZED_CLICK_WEIGHTS: Dict[str, float] = {
     "content": 0.12,
@@ -356,8 +365,183 @@ def _recency_score(
 
 
 # ============================================================
-# PRODUCT CLICK POPULARITY
+# TRUE RECOMMENDATION CLICK THROUGH RATE (CTR)
 # ============================================================
+
+def get_product_ctr_stats(
+    db: Session,
+    product_ids: Sequence[str],
+    *,
+    window_days: int = CLICK_EVENT_WINDOW_DAYS,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Calculate true recommendation CTR for candidate products.
+
+    CTR definition:
+
+        raw_ctr = recommendation_clicks / visible_recommendation_impressions
+
+    RecommendationLog is written by the Node tracking layer. One row maps to
+    one RecommendationRun and stores unique visible product ids in
+    ``recommendedIds`` and unique clicked product ids in ``clickedIds``.
+
+    Bayesian smoothing prevents 1 click / 1 impression from dominating:
+
+        smoothed_ctr =
+            (clicks + prior_strength * prior_mean)
+            / (impressions + prior_strength)
+
+    ``smoothed_ctr`` is the interpretable probability. ``score`` maps that
+    probability onto the 0..1 recommendation feature scale while preserving
+    the existing internal ``click_rate`` feature key used by dynamic LTR.
+    """
+
+    unique_ids = [
+        str(product_id)
+        for product_id in dict.fromkeys(product_ids)
+        if product_id
+    ]
+
+    if not unique_ids:
+        return {}
+
+    cutoff = (
+        datetime.utcnow()
+        - timedelta(
+            days=max(1, window_days)
+        )
+    )
+
+    # DISTINCT run_id/product_id means one product contributes at most one
+    # impression and one click per recommendation run.
+    statement = text(
+        """
+        WITH expanded AS (
+            SELECT DISTINCT
+                r.id AS run_id,
+                exposure.product_id,
+                (
+                    exposure.product_id = ANY(r."clickedIds")
+                ) AS clicked
+            FROM "RecommendationLog" AS r
+            CROSS JOIN LATERAL
+                unnest(r."recommendedIds") AS exposure(product_id)
+            WHERE
+                r."createdAt" >= :cutoff
+                AND exposure.product_id IN :product_ids
+        )
+        SELECT
+            product_id,
+            COUNT(*)::integer AS impressions,
+            COUNT(*) FILTER (WHERE clicked)::integer AS clicks
+        FROM expanded
+        GROUP BY product_id
+        """
+    ).bindparams(
+        bindparam(
+            "product_ids",
+            expanding=True,
+        )
+    )
+
+    rows = (
+        db.execute(
+            statement,
+            {
+                "cutoff": cutoff,
+                "product_ids": unique_ids,
+            },
+        )
+        .mappings()
+        .all()
+    )
+
+    if not rows:
+        return {}
+
+    total_impressions = sum(
+        int(row.get("impressions") or 0)
+        for row in rows
+    )
+
+    total_clicks = sum(
+        int(row.get("clicks") or 0)
+        for row in rows
+    )
+
+    # Use empirical candidate CTR as the prior once enough evidence exists;
+    # otherwise use the conservative 5% cold-start prior.
+    prior_mean = (
+        total_clicks / float(total_impressions)
+        if total_impressions >= 50
+        else CTR_PRIOR_MEAN
+    )
+    prior_mean = _clamp01(prior_mean)
+
+    stats: Dict[str, Dict[str, float]] = {}
+
+    for row in rows:
+        product_id = str(
+            row.get("product_id")
+            or ""
+        )
+
+        if not product_id:
+            continue
+
+        impressions = max(
+            0,
+            int(
+                row.get("impressions")
+                or 0
+            ),
+        )
+
+        clicks = max(
+            0,
+            min(
+                impressions,
+                int(
+                    row.get("clicks")
+                    or 0
+                ),
+            ),
+        )
+
+        if impressions <= 0:
+            continue
+
+        raw_ctr = clicks / float(impressions)
+
+        smoothed_ctr = (
+            clicks
+            + CTR_PRIOR_STRENGTH * prior_mean
+        ) / (
+            impressions
+            + CTR_PRIOR_STRENGTH
+        )
+
+        ctr_score = (
+            smoothed_ctr / CTR_SCORE_REFERENCE
+            if CTR_SCORE_REFERENCE > 0.0
+            else 0.0
+        )
+
+        stats[product_id] = {
+            "impressions_7d": float(impressions),
+            "clicks_7d": float(clicks),
+            "clicks_per_day": (
+                clicks
+                / float(max(1, window_days))
+            ),
+            "raw_ctr": _clamp01(raw_ctr),
+            "smoothed_ctr": _clamp01(smoothed_ctr),
+            "prior_ctr": prior_mean,
+            "score": _clamp01(ctr_score),
+        }
+
+    return stats
+
 
 def get_product_click_popularity_stats(
     db: Session,
@@ -365,174 +549,13 @@ def get_product_click_popularity_stats(
     *,
     window_days: int = CLICK_EVENT_WINDOW_DAYS,
 ) -> Dict[str, Dict[str, float]]:
-    """
-    GLOBAL product click popularity.
+    """Backward-compatible alias for the historical function name."""
 
-    Uses ClickEvent from ALL users.
-
-    Formula:
-
-        clicks_per_day =
-            clicks_last_7_days / 7
-
-        click_score =
-            log(1 + clicks_per_day)
-            -----------------------
-            log(1 + max_candidate_clicks_per_day)
-
-    This is NOT true CTR because impressions are not currently stored.
-    """
-
-    unique_ids = list(
-        dict.fromkeys(
-            product_ids
-        )
+    return get_product_ctr_stats(
+        db,
+        product_ids,
+        window_days=window_days,
     )
-
-
-    if not unique_ids:
-        return {}
-
-
-    cutoff = (
-        datetime.utcnow()
-        - timedelta(
-            days=window_days
-        )
-    )
-
-
-    rows = (
-        db.query(
-            ClickEvent.productId,
-
-            func.count(
-                ClickEvent.id
-            ).label(
-                "click_count"
-            ),
-        )
-
-        .filter(
-            ClickEvent.productId.in_(
-                unique_ids
-            ),
-
-            ClickEvent.createdAt
-            >= cutoff,
-        )
-
-        .group_by(
-            ClickEvent.productId
-        )
-
-        .all()
-    )
-
-
-    click_counts = {
-
-        str(
-            row.productId
-        ):
-        int(
-            row.click_count
-        )
-
-        for row in rows
-
-        if row.productId
-        is not None
-    }
-
-
-    if not click_counts:
-        return {}
-
-
-    rates = {
-
-        product_id:
-        count
-        / float(
-            window_days
-        )
-
-        for (
-            product_id,
-            count,
-        ) in click_counts.items()
-    }
-
-
-    max_rate = max(
-        rates.values(),
-        default=0.0,
-    )
-
-
-    denominator = (
-        math.log1p(
-            max_rate
-        )
-        if max_rate > 0.0
-        else 0.0
-    )
-
-
-    stats: Dict[
-        str,
-        Dict[str, float],
-    ] = {}
-
-
-    for (
-        product_id,
-        count,
-    ) in click_counts.items():
-
-        rate = rates[
-            product_id
-        ]
-
-
-        if denominator > 0.0:
-
-            score = (
-                math.log1p(
-                    rate
-                )
-                /
-                denominator
-            )
-
-        else:
-
-            score = 0.0
-
-
-        stats[
-            product_id
-        ] = {
-
-            "clicks_7d":
-                float(
-                    count
-                ),
-
-            "clicks_per_day":
-                float(
-                    rate
-                ),
-
-            "score":
-                _clamp01(
-                    score
-                ),
-        }
-
-
-    return stats
 
 
 # ============================================================
@@ -1473,7 +1496,7 @@ class ClickAwareFeatureComputer(
 ):
     """
     Existing recommendation features +
-    Product Click Popularity +
+    True Recommendation CTR +
     User Click Affinity.
     """
 
@@ -1511,7 +1534,7 @@ class ClickAwareFeatureComputer(
 
 
     # --------------------------------------------------------
-    # PRODUCT CLICK POPULARITY
+    # TRUE RECOMMENDATION CTR
     # --------------------------------------------------------
 
     def _get_product_click_rate_scores(
@@ -1519,13 +1542,14 @@ class ClickAwareFeatureComputer(
         product_ids: List[str],
     ) -> Dict[str, float]:
         """
-        Override original ProductClickHistory implementation.
+        Compute a true recommendation CTR feature.
 
-        We now use ClickEvent.
+        Denominator = actually visible recommendation impressions.
+        Numerator   = genuine product-discovery clicks from those impressions.
         """
 
         self.latest_product_click_stats = (
-            get_product_click_popularity_stats(
+            get_product_ctr_stats(
 
                 self.db,
 
@@ -1640,7 +1664,7 @@ class ClickAwareFeatureComputer(
 
 
             # ------------------------------------------------
-            # Global Product Click Popularity diagnostics
+            # True recommendation CTR diagnostics
             # ------------------------------------------------
 
             setattr(
@@ -1667,6 +1691,81 @@ class ClickAwareFeatureComputer(
                 float(
                     popularity_stats.get(
                         "clicks_per_day",
+                        0.0,
+                    )
+                ),
+            )
+
+
+            setattr(
+
+                scored_product,
+
+                "product_impressions_7d",
+
+                int(
+                    popularity_stats.get(
+                        "impressions_7d",
+                        0.0,
+                    )
+                ),
+            )
+
+
+            setattr(
+
+                scored_product,
+
+                "product_ctr",
+
+                float(
+                    popularity_stats.get(
+                        "raw_ctr",
+                        0.0,
+                    )
+                ),
+            )
+
+
+            setattr(
+
+                scored_product,
+
+                "product_ctr_smoothed",
+
+                float(
+                    popularity_stats.get(
+                        "smoothed_ctr",
+                        0.0,
+                    )
+                ),
+            )
+
+
+            setattr(
+
+                scored_product,
+
+                "product_ctr_prior",
+
+                float(
+                    popularity_stats.get(
+                        "prior_ctr",
+                        CTR_PRIOR_MEAN,
+                    )
+                ),
+            )
+
+
+            setattr(
+
+                scored_product,
+
+                "product_ctr_score",
+
+                float(
+                    popularity_stats.get(
+                        "score",
                         0.0,
                     )
                 ),
@@ -1783,7 +1882,7 @@ class ClickAwareScoreBlender:
     Blend 12 recommendation signals.
 
     Includes:
-        Product Click Popularity
+        True Recommendation CTR
         User Click Affinity
     """
 
@@ -2027,7 +2126,7 @@ class ClickPersonalizedRecommendationEngine:
                 ↓
         Existing features
                 +
-        Product Click Popularity
+        True Recommendation CTR
                 +
         User Click Affinity
                 ↓
