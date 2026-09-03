@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION CONSTANTS
 # ===========================================================================
 
-# 14-day exponential recency decay half-life
-PRICE_AFFINITY_HALFLIFE_DAYS = 14.0
+# 7-day exponential recency decay half-life
+PRICE_AFFINITY_HALFLIFE_DAYS = 7.0
 
 # Event importance weights (higher for explicit commitment actions)
 PRICE_EVENT_WEIGHTS: Dict[str, float] = {
