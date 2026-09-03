@@ -54,6 +54,7 @@ LTR_FEATURE_KEYS: Tuple[str, ...] = (
     "click_rate",
     "user_click_affinity",
     "engagement",
+    "price_affinity",
 )
 
 
@@ -89,6 +90,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "click_rate": 1.35,
         "user_click_affinity": 0.25,
         "engagement": 0.85,
+        "price_affinity": 0.50,
     },
     USER_SEGMENT_ACTIVE: {
         "content": 1.05,
@@ -103,6 +105,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "click_rate": 0.90,
         "user_click_affinity": 1.30,
         "engagement": 1.25,
+        "price_affinity": 1.20,
     },
     USER_SEGMENT_RETURNING: {
         "content": 1.10,
@@ -117,6 +120,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "click_rate": 1.15,
         "user_click_affinity": 0.90,
         "engagement": 1.00,
+        "price_affinity": 1.05,
     },
 }
 

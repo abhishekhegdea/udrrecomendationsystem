@@ -18,9 +18,9 @@ from app.ml.learning_to_rank import (
 
 
 BASE = {
-    "content": 0.12,
+    "content": 0.10,
     "collaborative": 0.10,
-    "trending": 0.08,
+    "trending": 0.07,
     "seasonal": 0.06,
     "location": 0.10,
     "category_affinity": 0.08,
@@ -29,7 +29,8 @@ BASE = {
     "seller_freshness": 0.05,
     "click_rate": 0.04,
     "user_click_affinity": 0.10,
-    "engagement": 0.13,
+    "engagement": 0.11,
+    "price_affinity": 0.05,
 }
 
 
