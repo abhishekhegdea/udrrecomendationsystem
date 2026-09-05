@@ -59,6 +59,10 @@ from app.ml.cold_start import (
     get_user_activity_profile,
 )
 
+from app.ml.price_affinity import (
+    build_user_price_profile,
+)
+
 from app.ml.seller_boost import (
     CANCEL_PENALTY_WEIGHT,
     fair_rank,
@@ -668,6 +672,80 @@ def format_product(
                     )
                 ),
                 6,
+            ),
+
+        # ====================================================
+        # PRICE AFFINITY
+        # ====================================================
+
+        "price_affinity_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "price_affinity_score",
+                        0.50,
+                    )
+                ),
+                6,
+            ),
+
+        "price_affinity_confidence":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "price_affinity_confidence",
+                        0.0,
+                    )
+                ),
+                4,
+            ),
+
+        "preferred_price":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "preferred_price",
+                        0.0,
+                    )
+                ),
+                2,
+            ),
+
+        "preferred_price_range": {
+            "lower":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "preferred_price_lower",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+            "upper":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "preferred_price_upper",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+        },
+
+        "price_is_in_range":
+            bool(
+                getattr(
+                    product,
+                    "price_is_in_range",
+                    False,
+                )
             ),
 
         "explanation":
@@ -1822,6 +1900,87 @@ def get_home_recommendations(
                     4,
                 ),
 
+            "price_affinity_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "price_affinity_score",
+                            0.50,
+                        )
+                    ),
+                    6,
+                ),
+
+            "price_affinity_confidence":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "price_affinity_confidence",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "price_distance":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "price_distance",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+
+            "preferred_price":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "preferred_price",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+
+            "preferred_price_lower":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "preferred_price_lower",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+
+            "preferred_price_upper":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "preferred_price_upper",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+
+            "price_is_in_range":
+                bool(
+                    getattr(
+                        scored_product,
+                        "price_is_in_range",
+                        False,
+                    )
+                ),
+
             "final_score":
                 round(
                     final_score,
@@ -1894,6 +2053,90 @@ def get_home_recommendations(
                     scored_product,
                     "personalized_score",
                     final_score,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_affinity_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "price_affinity_score",
+                    0.50,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_affinity_confidence",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "price_affinity_confidence",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_distance",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "price_distance",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "preferred_price",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "preferred_price",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "preferred_price_lower",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "preferred_price_lower",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "preferred_price_upper",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "preferred_price_upper",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_is_in_range",
+            bool(
+                getattr(
+                    scored_product,
+                    "price_is_in_range",
+                    False,
                 )
             ),
         )
@@ -2080,10 +2323,8 @@ def get_home_recommendations(
         )
 
 
-    activity_profile = get_user_activity_profile(
-        db,
-        user_id,
-    )
+    activity_profile = get_user_activity_profile(db, user_id)
+    price_profile = build_user_price_profile(db, user_id)
 
     # ========================================================
     # API RESPONSE
@@ -2093,6 +2334,42 @@ def get_home_recommendations(
 
         "user_id":
             user_id,
+
+        # ----------------------------------------------------
+        # USER PRICE PROFILE
+        # ----------------------------------------------------
+
+        "price_profile": {
+            "preferred_price":
+                price_profile.preferred_price,
+            "lower_price":
+                price_profile.lower_price,
+            "upper_price":
+                price_profile.upper_price,
+            "weighted_mean":
+                price_profile.weighted_mean,
+            "weighted_median":
+                price_profile.weighted_median,
+            "price_std_dev":
+                price_profile.price_std_dev,
+            "confidence":
+                price_profile.confidence,
+            "confidence_percentage":
+                _percentage(
+                    price_profile.confidence,
+                    1,
+                ),
+            "has_preference":
+                price_profile.has_preference,
+            "interaction_count":
+                price_profile.interaction_count,
+            "unique_products_count":
+                price_profile.unique_products_count,
+            "sample_count":
+                price_profile.sample_count,
+            "categories_count":
+                len(price_profile.categories),
+        },
 
         # ----------------------------------------------------
         # COLD-START & ACTIVITY METADATA

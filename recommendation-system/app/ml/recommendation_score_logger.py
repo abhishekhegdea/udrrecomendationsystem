@@ -153,6 +153,11 @@ FEATURE_SPECS: Tuple[
         "engagement_score",
         "engagement",
     ),
+    (
+        "price_affinity",
+        "price_affinity_score",
+        "price_affinity",
+    ),
 )
 
 

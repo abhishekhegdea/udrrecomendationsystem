@@ -78,6 +78,12 @@ from app.ml.cold_start import (
     build_cold_start_explanation,
 )
 
+from app.ml.price_affinity import (
+    build_user_price_profile,
+    compute_candidate_price_affinity,
+    UserPriceProfile,
+)
+
 
 # ============================================================
 # CONFIGURATION
@@ -147,9 +153,9 @@ CLICK_AFFINITY_CANDIDATES_PER_SEED = 10
 # User Click Affinity remains a separate personalised KPI.
 
 PERSONALIZED_CLICK_WEIGHTS: Dict[str, float] = {
-    "content": 0.12,
+    "content": 0.10,
     "collaborative": 0.10,
-    "trending": 0.08,
+    "trending": 0.07,
     "seasonal": 0.06,
 
     # Location is now part of the actual recommendation score at 10%.
@@ -163,7 +169,8 @@ PERSONALIZED_CLICK_WEIGHTS: Dict[str, float] = {
     "seller_freshness": 0.05,
     "click_rate": 0.04,
     "user_click_affinity": 0.10,
-    "engagement": 0.13,
+    "engagement": 0.11,
+    "price_affinity": 0.05,
 }
 
 
@@ -2366,6 +2373,7 @@ class ClickAwareScoreBlender:
         db: Optional[Session] = None,
         config: Optional[EngineConfig] = None,
         user_id: Optional[str] = None,
+        price_profile: Optional[UserPriceProfile] = None,
     ) -> List[
         ScoredProduct
     ]:
@@ -2385,6 +2393,9 @@ class ClickAwareScoreBlender:
             else {}
         )
 
+        if price_profile is None and db is not None and user_id is not None:
+            price_profile = build_user_price_profile(db, user_id)
+
         for sp in candidates:
             user_click_affinity = float(
                 getattr(
@@ -2394,6 +2405,16 @@ class ClickAwareScoreBlender:
                 )
                 or 0.0
             )
+
+            # Compute candidate price affinity score
+            cand_price = compute_candidate_price_affinity(sp.product, price_profile)
+            sp.price_affinity_score = cand_price.price_affinity_score
+            sp.price_affinity_confidence = cand_price.price_affinity_confidence
+            sp.price_distance = cand_price.price_distance
+            sp.price_is_in_range = cand_price.is_in_range
+            sp.preferred_price = cand_price.preferred_price
+            sp.preferred_price_lower = cand_price.lower_price
+            sp.preferred_price_upper = cand_price.upper_price
 
             blended_personalized = (
                 w.get(
@@ -2456,6 +2477,11 @@ class ClickAwareScoreBlender:
                     0.0,
                 )
                 * sp.engagement_score
+                + w.get(
+                    "price_affinity",
+                    0.0,
+                )
+                * sp.price_affinity_score
             )
 
             pers_score = _clamp01(blended_personalized)
@@ -2726,6 +2752,9 @@ class ClickPersonalizedRecommendationEngine:
         # Progressive Cold-Start / Personalized Blending
         # ====================================================
 
+        # Precompute user price profile once per recommendation call
+        price_profile = build_user_price_profile(self.db, user_id)
+
         blender = (
             ClickAwareScoreBlender(
                 config.weights
@@ -2738,6 +2767,7 @@ class ClickPersonalizedRecommendationEngine:
                 db=self.db,
                 config=config,
                 user_id=user_id,
+                price_profile=price_profile,
             )
         )
 
