@@ -57,8 +57,6 @@ from app.ml.recommendation_score_logger import (
 
 from app.ml.cold_start import (
     get_user_activity_profile,
-    STAGE_COMPLETELY_COLD,
-    MODE_COLD_START,
 )
 
 from app.ml.seller_boost import (
@@ -582,6 +580,72 @@ def format_product(
                 6,
             ),
 
+        # ====================================================
+        # TREND VELOCITY
+        # ====================================================
+        "trend_velocity_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "trend_velocity_score",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "trend_popularity_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "trend_popularity_score",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "trend_current_interest_per_day":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "trend_current_interest_per_day",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "trend_previous_interest_per_day":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "trend_previous_interest_per_day",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        "trend_growth_rate":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "trend_growth_rate",
+                        0.0,
+                    )
+                ),
+                6,
+            ),
+
+        # ====================================================
+        # COLD START
+        # ====================================================
         "cold_start_score":
             round(
                 _safe_float(
@@ -903,6 +967,46 @@ def get_home_recommendations(
             )
         )
 
+        trend_velocity_score = _safe_float(
+            getattr(
+                scored_product,
+                "trend_velocity_score",
+                0.0,
+            )
+        )
+
+        trend_popularity_score = _safe_float(
+            getattr(
+                scored_product,
+                "trend_popularity_score",
+                trend_score,
+            )
+        )
+
+        trend_current_interest_per_day = _safe_float(
+            getattr(
+                scored_product,
+                "trend_current_interest_per_day",
+                0.0,
+            )
+        )
+
+        trend_previous_interest_per_day = _safe_float(
+            getattr(
+                scored_product,
+                "trend_previous_interest_per_day",
+                0.0,
+            )
+        )
+
+        trend_growth_rate = _safe_float(
+            getattr(
+                scored_product,
+                "trend_growth_rate",
+                0.0,
+            )
+        )
+
 
         seasonal_score = (
             _safe_float(
@@ -1183,6 +1287,36 @@ def get_home_recommendations(
             "trend":
                 round(
                     trend_score,
+                    6,
+                ),
+
+            "trend_velocity":
+                round(
+                    trend_velocity_score,
+                    6,
+                ),
+
+            "trend_popularity":
+                round(
+                    trend_popularity_score,
+                    6,
+                ),
+
+            "trend_current_interest_per_day":
+                round(
+                    trend_current_interest_per_day,
+                    6,
+                ),
+
+            "trend_previous_interest_per_day":
+                round(
+                    trend_previous_interest_per_day,
+                    6,
+                ),
+
+            "trend_growth_rate":
+                round(
+                    trend_growth_rate,
                     6,
                 ),
 
@@ -1712,6 +1846,36 @@ def get_home_recommendations(
 
         setattr(
             product,
+            "trend_velocity_score",
+            trend_velocity_score,
+        )
+
+        setattr(
+            product,
+            "trend_popularity_score",
+            trend_popularity_score,
+        )
+
+        setattr(
+            product,
+            "trend_current_interest_per_day",
+            trend_current_interest_per_day,
+        )
+
+        setattr(
+            product,
+            "trend_previous_interest_per_day",
+            trend_previous_interest_per_day,
+        )
+
+        setattr(
+            product,
+            "trend_growth_rate",
+            trend_growth_rate,
+        )
+
+        setattr(
+            product,
             "cold_start_score",
             _safe_float(
                 getattr(
@@ -1916,7 +2080,10 @@ def get_home_recommendations(
         )
 
 
-    activity_profile = get_user_activity_profile(db, user_id)
+    activity_profile = get_user_activity_profile(
+        db,
+        user_id,
+    )
 
     # ========================================================
     # API RESPONSE
@@ -1930,7 +2097,6 @@ def get_home_recommendations(
         # ----------------------------------------------------
         # COLD-START & ACTIVITY METADATA
         # ----------------------------------------------------
-
         "recommendation_mode":
             activity_profile.recommendation_mode,
 
@@ -1959,6 +2125,7 @@ def get_home_recommendations(
 
         "user_activity_breakdown":
             activity_profile.breakdown,
+
 
         # ----------------------------------------------------
         # RECOMMENDATION AUDIT

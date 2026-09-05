@@ -4,8 +4,8 @@ ClickEvent-driven recommendation extension for UdrCrafts.
 This module adds TWO separate click signals:
 
 1. True Recommendation Click Through Rate / CTR (4%)
-   - Measures the probability that a recommendation impression becomes a
-     genuine product-discovery click during the last 7 days.
+   - Measures the probability that a visible recommendation impression becomes
+     a genuine product-discovery click during the last 7 days.
    - Uses RecommendationLog impressions + clicks with Bayesian smoothing.
 
 2. User Click Affinity (10%)
@@ -89,10 +89,43 @@ CLICK_EVENT_WINDOW_DAYS = 7
 CTR_PRIOR_MEAN = 0.05
 CTR_PRIOR_STRENGTH = 20.0
 
-# The raw/smoothed CTR is a probability (typically a few percent), while the
-# recommendation blender expects each feature score on roughly a 0..1 scale.
-# A 20% smoothed CTR therefore maps to a full CTR feature score of 1.0.
+# Raw/smoothed CTR is a probability. The recommendation blender expects
+# roughly 0..1 feature scores, so 20% smoothed CTR maps to a full score of 1.
 CTR_SCORE_REFERENCE = 0.20
+
+
+# ============================================================
+# TREND VELOCITY CONFIGURATION
+# ============================================================
+
+# Compare the most recent 3 days with the 3 days immediately before them.
+TREND_VELOCITY_CURRENT_WINDOW_DAYS = 3
+TREND_VELOCITY_PREVIOUS_WINDOW_DAYS = 3
+
+# Stabilizes growth when the previous period has little/no activity.
+TREND_VELOCITY_PRIOR_INTEREST_PER_DAY = 1.0
+
+# Existing "trending" feature is preserved. Its score becomes:
+#   70% interest velocity + 30% historical popularity
+# If there is no recent behavioral evidence for a product, the old popularity
+# score is kept unchanged as a safe fallback.
+TREND_VELOCITY_WEIGHT = 0.70
+TREND_POPULARITY_WEIGHT = 0.30
+
+# Rising-interest products can also enter the candidate pool directly.
+TREND_VELOCITY_CANDIDATE_LIMIT = 30
+
+# Product-interest event strength. ClickEvent is handled separately so
+# authenticated clicks are not double-counted through UserBehaviour EVENT_CLICK.
+TREND_BEHAVIOUR_EVENT_WEIGHTS: Dict[str, float] = {
+    EVENT_PRODUCT_VIEW: 1.0,
+    EVENT_WISHLIST: 3.0,
+    EVENT_CART: 4.0,
+    EVENT_PURCHASE: 5.0,
+}
+
+TREND_CLICK_INTEREST_WEIGHT = 1.5
+
 
 CLICK_AFFINITY_RECENCY_HALFLIFE_DAYS = 2.0
 
@@ -556,6 +589,224 @@ def get_product_click_popularity_stats(
         product_ids,
         window_days=window_days,
     )
+
+
+# ============================================================
+# TREND VELOCITY
+# ============================================================
+
+def get_product_trend_velocity_stats(
+    db: Session,
+    product_ids: Optional[Sequence[str]] = None,
+    *,
+    current_window_days: int = TREND_VELOCITY_CURRENT_WINDOW_DAYS,
+    previous_window_days: int = TREND_VELOCITY_PREVIOUS_WINDOW_DAYS,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Measure whether product interest is accelerating.
+
+    Current interest rate:
+        weighted interactions during the most recent window / days
+
+    Previous interest rate:
+        weighted interactions during the immediately preceding window / days
+
+    Growth:
+        (current_rate - previous_rate)
+        / (previous_rate + prior_interest_per_day)
+
+    Only positive growth produces a velocity score. Falling/flat interest gets
+    zero velocity, while the existing historical popularity score remains
+    available as a fallback/blended component.
+
+    Interest sources:
+        Product view -> 1.0
+        Click        -> 1.5
+        Wishlist     -> 3.0
+        Cart         -> 4.0
+        Purchase     -> 5.0
+    """
+
+    current_days = max(1, int(current_window_days))
+    previous_days = max(1, int(previous_window_days))
+
+    requested_ids: Optional[List[str]]
+    if product_ids is None:
+        requested_ids = None
+    else:
+        requested_ids = [
+            str(product_id)
+            for product_id in dict.fromkeys(product_ids)
+            if product_id
+        ]
+        if not requested_ids:
+            return {}
+
+    now = datetime.utcnow()
+    current_cutoff = now - timedelta(days=current_days)
+    previous_cutoff = current_cutoff - timedelta(days=previous_days)
+
+    buckets: Dict[str, Dict[str, float]] = {}
+
+    def _add_interest(
+        product_id: object,
+        created_at: Optional[datetime],
+        weight: float,
+    ) -> None:
+        if not product_id or created_at is None:
+            return
+
+        product_key = str(product_id)
+
+        values = buckets.setdefault(
+            product_key,
+            {
+                "current_interest": 0.0,
+                "previous_interest": 0.0,
+            },
+        )
+
+        if created_at >= current_cutoff:
+            values["current_interest"] += float(weight)
+        elif created_at >= previous_cutoff:
+            values["previous_interest"] += float(weight)
+
+    # UserBehaviour captures the main authenticated behavioral funnel.
+    behaviour_query = (
+        db.query(
+            UserBehaviour.productId,
+            UserBehaviour.eventType,
+            UserBehaviour.createdAt,
+        )
+        .filter(
+            UserBehaviour.productId.isnot(None),
+            UserBehaviour.createdAt >= previous_cutoff,
+            UserBehaviour.eventType.in_(
+                list(TREND_BEHAVIOUR_EVENT_WEIGHTS.keys())
+            ),
+        )
+    )
+
+    if requested_ids is not None:
+        behaviour_query = behaviour_query.filter(
+            UserBehaviour.productId.in_(requested_ids)
+        )
+
+    for row in behaviour_query.all():
+        _add_interest(
+            row.productId,
+            row.createdAt,
+            TREND_BEHAVIOUR_EVENT_WEIGHTS.get(
+                row.eventType,
+                0.0,
+            ),
+        )
+
+    # ClickEvent is the canonical click stream and can include anonymous clicks.
+    click_query = (
+        db.query(
+            ClickEvent.productId,
+            ClickEvent.createdAt,
+        )
+        .filter(
+            ClickEvent.productId.isnot(None),
+            ClickEvent.createdAt >= previous_cutoff,
+        )
+    )
+
+    if requested_ids is not None:
+        click_query = click_query.filter(
+            ClickEvent.productId.in_(requested_ids)
+        )
+
+    for row in click_query.all():
+        _add_interest(
+            row.productId,
+            row.createdAt,
+            TREND_CLICK_INTEREST_WEIGHT,
+        )
+
+    stats: Dict[str, Dict[str, float]] = {}
+
+    for product_id, values in buckets.items():
+        current_interest = float(
+            values.get("current_interest", 0.0)
+        )
+        previous_interest = float(
+            values.get("previous_interest", 0.0)
+        )
+
+        current_rate = current_interest / float(current_days)
+        previous_rate = previous_interest / float(previous_days)
+
+        rate_delta = current_rate - previous_rate
+
+        growth_rate = (
+            rate_delta
+            / (
+                previous_rate
+                + TREND_VELOCITY_PRIOR_INTEREST_PER_DAY
+            )
+        )
+
+        positive_growth = max(0.0, growth_rate)
+
+        # Smooth bounded mapping: 0 growth -> 0, stronger positive growth -> 1.
+        velocity_score = (
+            1.0
+            - math.exp(-positive_growth)
+        )
+
+        stats[product_id] = {
+            "current_interest": current_interest,
+            "previous_interest": previous_interest,
+            "current_interest_per_day": current_rate,
+            "previous_interest_per_day": previous_rate,
+            "interest_rate_delta": rate_delta,
+            "growth_rate": growth_rate,
+            "velocity_score": _clamp01(velocity_score),
+        }
+
+    return stats
+
+
+def get_trend_velocity_candidate_ids(
+    db: Session,
+    *,
+    limit: int = TREND_VELOCITY_CANDIDATE_LIMIT,
+) -> List[str]:
+    """
+    Return products whose recent interest is rising the fastest.
+
+    Products with zero/negative velocity are excluded. Historical popularity is
+    still supplied by the base CandidateGenerator, so this method specifically
+    adds emerging/rising products that total-popularity ranking can miss.
+    """
+
+    stats = get_product_trend_velocity_stats(
+        db,
+        product_ids=None,
+    )
+
+    ranked = sorted(
+        (
+            (product_id, values)
+            for product_id, values in stats.items()
+            if values.get("velocity_score", 0.0) > 0.0
+            and values.get("current_interest", 0.0) > 0.0
+        ),
+        key=lambda item: (
+            float(item[1].get("velocity_score", 0.0)),
+            float(item[1].get("current_interest_per_day", 0.0)),
+            float(item[1].get("current_interest", 0.0)),
+        ),
+        reverse=True,
+    )
+
+    return [
+        product_id
+        for product_id, _ in ranked[: max(0, int(limit))]
+    ]
 
 
 # ============================================================
@@ -1402,16 +1653,22 @@ class ClickAwareCandidateGenerator(
     ]:
         activity_profile = get_user_activity_profile(self.db, user_id)
 
-        # Completely cold user -> directly generate diversified cold-start candidates
+        # Completely cold users still use the existing diversified cold-start
+        # candidate strategy. We continue through this method so global
+        # trend-velocity candidates can also be considered.
         if activity_profile.activity_stage == STAGE_COMPLETELY_COLD:
-            return generate_cold_start_candidates(self.db, self.config, user_id)
-
-        # Early, emerging, developing or warm user -> generate base candidates
-        candidates = (
-            super().generate(
-                user_id
+            candidates = generate_cold_start_candidates(
+                self.db,
+                self.config,
+                user_id,
             )
-        )
+        else:
+            # Early, emerging, developing or warm user -> generate base candidates
+            candidates = (
+                super().generate(
+                    user_id
+                )
+            )
 
         seen = {
             product.id
@@ -1436,6 +1693,51 @@ class ClickAwareCandidateGenerator(
                 if product.id not in seen:
                     seen.add(product.id)
                     candidates.append((product, source))
+
+        # ----------------------------------------------------
+        # Rising-interest / trend-velocity candidates
+        # ----------------------------------------------------
+        velocity_candidate_ids = get_trend_velocity_candidate_ids(
+            self.db,
+            limit=TREND_VELOCITY_CANDIDATE_LIMIT,
+        )
+
+        if velocity_candidate_ids:
+            velocity_products = (
+                self.db.query(Product)
+                .options(
+                    joinedload(Product.images),
+                    joinedload(Product.seller),
+                    joinedload(Product.category),
+                )
+                .filter(
+                    Product.id.in_(velocity_candidate_ids)
+                )
+                .all()
+            )
+
+            velocity_product_map = {
+                product.id: product
+                for product in velocity_products
+            }
+
+            # Preserve the global velocity ranking returned above.
+            for product_id in velocity_candidate_ids:
+                product = velocity_product_map.get(product_id)
+
+                if (
+                    product is None
+                    or product.id in seen
+                ):
+                    continue
+
+                seen.add(product.id)
+                candidates.append(
+                    (
+                        product,
+                        "trend_velocity",
+                    )
+                )
 
         # ----------------------------------------------------
         # Strongest recently clicked products
@@ -1510,6 +1812,14 @@ class ClickAwareFeatureComputer(
     _SOURCE_CONTENT_SCORES[
         "click_affinity"
     ] = 0.75
+
+
+    # Trend-velocity is a discovery source rather than semantic similarity.
+    # Keep content at zero so velocity is counted only through the existing
+    # "trending" feature and is not accidentally double-counted.
+    _SOURCE_CONTENT_SCORES[
+        "trend_velocity"
+    ] = 0.0
 
 
     def __init__(
@@ -1609,6 +1919,133 @@ class ClickAwareFeatureComputer(
                     recent_views,
             )
         )
+
+
+        # ----------------------------------------------------
+        # Trend velocity
+        # ----------------------------------------------------
+        trend_stats = get_product_trend_velocity_stats(
+            self.db,
+            [
+                scored_product.product.id
+                for scored_product in scored_products
+            ],
+        )
+
+        for scored_product in scored_products:
+            product_id = scored_product.product.id
+
+            # This is the original historical-popularity trend score computed
+            # by FeatureComputer. Preserve it for diagnostics and fallback.
+            popularity_trend_score = _clamp01(
+                float(
+                    getattr(
+                        scored_product,
+                        "trend_score",
+                        0.0,
+                    )
+                    or 0.0
+                )
+            )
+
+            velocity = trend_stats.get(
+                product_id,
+                {},
+            )
+
+            if velocity:
+                velocity_score = _clamp01(
+                    float(
+                        velocity.get(
+                            "velocity_score",
+                            0.0,
+                        )
+                    )
+                )
+
+                combined_trend_score = _clamp01(
+                    TREND_VELOCITY_WEIGHT
+                    * velocity_score
+                    + TREND_POPULARITY_WEIGHT
+                    * popularity_trend_score
+                )
+            else:
+                # No recent behavior -> preserve old trending behavior exactly.
+                velocity_score = 0.0
+                combined_trend_score = popularity_trend_score
+
+            scored_product.trend_score = combined_trend_score
+
+            setattr(
+                scored_product,
+                "trend_popularity_score",
+                popularity_trend_score,
+            )
+            setattr(
+                scored_product,
+                "trend_velocity_score",
+                velocity_score,
+            )
+            setattr(
+                scored_product,
+                "trend_current_interest",
+                float(
+                    velocity.get(
+                        "current_interest",
+                        0.0,
+                    )
+                ),
+            )
+            setattr(
+                scored_product,
+                "trend_previous_interest",
+                float(
+                    velocity.get(
+                        "previous_interest",
+                        0.0,
+                    )
+                ),
+            )
+            setattr(
+                scored_product,
+                "trend_current_interest_per_day",
+                float(
+                    velocity.get(
+                        "current_interest_per_day",
+                        0.0,
+                    )
+                ),
+            )
+            setattr(
+                scored_product,
+                "trend_previous_interest_per_day",
+                float(
+                    velocity.get(
+                        "previous_interest_per_day",
+                        0.0,
+                    )
+                ),
+            )
+            setattr(
+                scored_product,
+                "trend_interest_rate_delta",
+                float(
+                    velocity.get(
+                        "interest_rate_delta",
+                        0.0,
+                    )
+                ),
+            )
+            setattr(
+                scored_product,
+                "trend_growth_rate",
+                float(
+                    velocity.get(
+                        "growth_rate",
+                        0.0,
+                    )
+                ),
+            )
 
 
         # ----------------------------------------------------
@@ -1883,6 +2320,7 @@ class ClickAwareScoreBlender:
 
     Includes:
         True Recommendation CTR
+        Trend Velocity inside the existing trending feature
         User Click Affinity
     """
 
@@ -2101,6 +2539,23 @@ class ClickAwareRankerSelector(
                 "Based on products you've been clicking recently."
             )
 
+        trend_velocity_score = float(
+            getattr(
+                sp,
+                "trend_velocity_score",
+                0.0,
+            )
+            or 0.0
+        )
+
+        if (
+            trend_velocity_score >= 0.55
+            and activity_stage != STAGE_COMPLETELY_COLD
+        ):
+            return (
+                "Trending fast — shopper interest is rising."
+            )
+
         if cold_info and getattr(cold_info, "explanation", None) and activity_stage in (STAGE_EARLY_SIGNAL, STAGE_EMERGING_PROFILE):
             # If personalized score is negligible, prefer cold-start explanation
             if getattr(sp, "personalized_score", 0.0) < 0.15:
@@ -2125,6 +2580,8 @@ class ClickPersonalizedRecommendationEngine:
         Candidate generation (Personalized + Cold-Start)
                 ↓
         Existing features
+                +
+        Trend Velocity (inside the existing trending feature)
                 +
         True Recommendation CTR
                 +
