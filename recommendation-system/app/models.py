@@ -484,6 +484,14 @@ class Order(Base):
         nullable=True,
     )
 
+    # The Prisma-managed table stores createdAt/totalAmount; map createdAt so
+    # purchase observations built from OrderItem can use real order timestamps
+    # instead of falling back to "now".
+    createdAt = Column(
+        DateTime,
+        nullable=True,
+    )
+
 
 class OrderItem(Base):
     __tablename__ = "OrderItem"
@@ -1048,6 +1056,18 @@ class RecommendationScoreSnapshot(Base):
         default=0.0,
     )
 
+    priceBehaviorScore = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    priceBehaviorConfidence = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
     # -----------------------------------------------------------------------
     # Product-click diagnostics
     # -----------------------------------------------------------------------
@@ -1173,6 +1193,12 @@ class RecommendationScoreSnapshot(Base):
     )
 
     engagementContribution = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    priceBehaviorContribution = Column(
         Float,
         nullable=False,
         default=0.0,

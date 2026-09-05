@@ -158,6 +158,11 @@ FEATURE_SPECS: Tuple[
         "price_affinity_score",
         "price_affinity",
     ),
+    (
+        "price_behavior",
+        "price_behavior_score",
+        "price_behavior",
+    ),
 )
 
 
@@ -680,6 +685,16 @@ def persist_recommendation_run(
             engagementScore=_safe_float(
                 raw["engagement"]
             ),
+            priceBehaviorScore=_safe_float(
+                raw["price_behavior"]
+            ),
+            priceBehaviorConfidence=_safe_float(
+                getattr(
+                    scored_product,
+                    "price_behavior_confidence",
+                    0.0,
+                )
+            ),
 
             # ------------------------------------------------------------
             # Product click diagnostics
@@ -780,6 +795,9 @@ def persist_recommendation_run(
             ),
             engagementContribution=_safe_float(
                 contributions["engagement"]
+            ),
+            priceBehaviorContribution=_safe_float(
+                contributions["price_behavior"]
             ),
 
             # ------------------------------------------------------------

@@ -576,6 +576,10 @@ model RecommendationScoreSnapshot {
   userClickAffinityScore      Float   @default(0)
   engagementScore             Float   @default(0)
 
+  // Price behaviour (discount / premium / full-price affinity)
+  priceBehaviorScore          Float   @default(0)
+  priceBehaviorConfidence     Float   @default(0)
+
   // Click diagnostics
   productClicks7d     Int   @default(0)
   productClicksPerDay Float @default(0)
@@ -601,6 +605,7 @@ model RecommendationScoreSnapshot {
   productClickPopularityContribution Float @default(0)
   userClickAffinityContribution      Float @default(0)
   engagementContribution             Float @default(0)
+  priceBehaviorContribution          Float @default(0)
 
   // Final score trace
   weightedScoreBeforeRules Float @default(0)

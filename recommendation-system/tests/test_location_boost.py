@@ -169,10 +169,12 @@ def test_default_location_configuration():
     assert cfg.location_priority_slots == DEFAULT_LOCATION_PRIORITY_SLOTS
 
 
-def test_personalized_location_weight_is_ten_percent():
+def test_personalized_location_weight_is_rebalanced():
+    # Location stayed near its original weight but was rebalanced when the
+    # price_behavior signal (0.05) joined the weight set.
     assert math.isclose(
         PERSONALIZED_CLICK_WEIGHTS["location"],
-        0.10,
+        0.095,
         rel_tol=1e-12,
     )
     assert math.isclose(
