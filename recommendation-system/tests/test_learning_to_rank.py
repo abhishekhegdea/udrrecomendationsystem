@@ -31,6 +31,7 @@ BASE = {
     "user_click_affinity": 0.10,
     "engagement": 0.11,
     "price_affinity": 0.05,
+    "price_behavior": 0.05,
 }
 
 

@@ -1,6 +1,6 @@
 import sys
 sys.path.append(r'd:\OneDrive\Desktop\udrcrafts\recommendation-system')
-from app.db.session import SessionLocal
+from app.database import SessionLocal
 from app.models import Product, UserBehaviour
 
 db = SessionLocal()

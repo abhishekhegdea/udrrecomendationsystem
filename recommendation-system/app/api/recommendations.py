@@ -65,6 +65,12 @@ from app.ml.price_affinity import (
     build_user_price_profile,
 )
 
+from app.ml.price_behavior import (
+    build_category_price_stats,
+    build_user_price_behavior_profile,
+    BEHAVIOR_UNKNOWN,
+)
+
 from app.ml.seller_boost import (
     CANCEL_PENALTY_WEIGHT,
     fair_rank,
@@ -683,6 +689,97 @@ def format_product(
                     False,
                 )
             ),
+
+        # ====================================================
+        # PRICE BEHAVIOUR (discount / premium / full-price)
+        # ====================================================
+
+        "price_behavior": {
+            "type":
+                str(
+                    getattr(
+                        product,
+                        "price_behavior_type",
+                        BEHAVIOR_UNKNOWN,
+                    )
+                    or BEHAVIOR_UNKNOWN
+                ),
+            "confidence":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "price_behavior_confidence",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+            "score":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "price_behavior_score",
+                            0.50,
+                        )
+                    ),
+                    6,
+                ),
+            "explanation":
+                str(
+                    getattr(
+                        product,
+                        "price_behavior_explanation",
+                        "",
+                    )
+                    or ""
+                ),
+            "candidate_discount_percentage":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "candidate_discount_percentage",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+            "candidate_original_price":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "candidate_original_price",
+                            0.0,
+                        )
+                    ),
+                    2,
+                ),
+            "candidate_premium_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "candidate_premium_score",
+                            0.0,
+                        )
+                    ),
+                    6,
+                ),
+            "candidate_full_price_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            product,
+                            "candidate_full_price_score",
+                            0.0,
+                        )
+                    ),
+                    6,
+                ),
+        },
 
         "explanation":
             getattr(
@@ -1847,6 +1944,116 @@ def get_home_recommendations(
                     )
                 ),
 
+            # ====================================================
+            # PRICE BEHAVIOUR (discount / premium / full-price)
+            # ====================================================
+
+            "price_behavior": {
+                "type":
+                    str(
+                        getattr(
+                            scored_product,
+                            "price_behavior_type",
+                            BEHAVIOR_UNKNOWN,
+                        )
+                        or BEHAVIOR_UNKNOWN
+                    ),
+                "confidence":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "price_behavior_confidence",
+                                0.0,
+                            )
+                        ),
+                        4,
+                    ),
+                "score":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "price_behavior_score",
+                                0.50,
+                            )
+                        ),
+                        6,
+                    ),
+                "raw_score":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "price_behavior_raw_score",
+                                0.50,
+                            )
+                        ),
+                        6,
+                    ),
+                "explanation":
+                    str(
+                        getattr(
+                            scored_product,
+                            "price_behavior_explanation",
+                            "",
+                        )
+                        or ""
+                    ),
+                "candidate_discount_percentage":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "candidate_discount_percentage",
+                                0.0,
+                            )
+                        ),
+                        4,
+                    ),
+                "candidate_original_price":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "candidate_original_price",
+                                0.0,
+                            )
+                        ),
+                        2,
+                    ),
+                "candidate_premium_score":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "candidate_premium_score",
+                                0.0,
+                            )
+                        ),
+                        6,
+                    ),
+                "candidate_full_price_score":
+                    round(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "candidate_full_price_score",
+                                0.0,
+                            )
+                        ),
+                        6,
+                    ),
+                "used_category_profile":
+                    bool(
+                        getattr(
+                            scored_product,
+                            "price_behavior_used_category_profile",
+                            False,
+                        )
+                    ),
+            },
+
             "final_score":
                 round(
                     final_score,
@@ -1973,6 +2180,108 @@ def get_home_recommendations(
                     scored_product,
                     "price_is_in_range",
                     False,
+                )
+            ),
+        )
+
+        # ------------------------------------------------------------
+        # PRICE BEHAVIOUR (discount / premium / full-price affinity)
+        # ------------------------------------------------------------
+
+        setattr(
+            product,
+            "price_behavior_type",
+            str(
+                getattr(
+                    scored_product,
+                    "price_behavior_type",
+                    BEHAVIOR_UNKNOWN,
+                )
+                or BEHAVIOR_UNKNOWN
+            ),
+        )
+
+        setattr(
+            product,
+            "price_behavior_confidence",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "price_behavior_confidence",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_behavior_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "price_behavior_score",
+                    0.50,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "price_behavior_explanation",
+            str(
+                getattr(
+                    scored_product,
+                    "price_behavior_explanation",
+                    "",
+                )
+                or ""
+            ),
+        )
+
+        setattr(
+            product,
+            "candidate_discount_percentage",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "candidate_discount_percentage",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "candidate_original_price",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "candidate_original_price",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "candidate_premium_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "candidate_premium_score",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "candidate_full_price_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "candidate_full_price_score",
+                    0.0,
                 )
             ),
         )
@@ -2161,6 +2470,7 @@ def get_home_recommendations(
 
     activity_profile = get_user_activity_profile(db, user_id)
     price_profile = build_user_price_profile(db, user_id)
+    price_behavior_profile = build_user_price_behavior_profile(db, user_id)
 
     # ========================================================
     # API RESPONSE
@@ -2205,6 +2515,54 @@ def get_home_recommendations(
                 price_profile.sample_count,
             "categories_count":
                 len(price_profile.categories),
+        },
+
+        # ----------------------------------------------------
+        # PRICE BEHAVIOUR (discount / premium / full-price)
+        # ----------------------------------------------------
+        # Backward-compatible addition.  ``type`` is never a behavioural claim
+        # at low confidence: it is "UNKNOWN" until enough evidence exists.
+
+        "price_behavior": {
+            "type":
+                price_behavior_profile.behavior_type,
+            "confidence":
+                price_behavior_profile.confidence,
+            "confidence_percentage":
+                _percentage(
+                    price_behavior_profile.confidence,
+                    1,
+                ),
+            "score":
+                price_behavior_profile.confidence,
+            "discount_affinity":
+                price_behavior_profile.discount_affinity,
+            "premium_affinity":
+                price_behavior_profile.premium_affinity,
+            "full_price_affinity":
+                price_behavior_profile.full_price_affinity,
+            "price_sensitivity":
+                price_behavior_profile.price_sensitivity,
+            "preferred_discount_percentage":
+                price_behavior_profile.preferred_discount_percentage,
+            "average_discount_seen":
+                price_behavior_profile.average_discount_seen,
+            "average_discount_purchased":
+                price_behavior_profile.average_discount_purchased,
+            "discount_purchase_ratio":
+                price_behavior_profile.discount_purchase_ratio,
+            "premium_purchase_ratio":
+                price_behavior_profile.premium_purchase_ratio,
+            "full_price_purchase_ratio":
+                price_behavior_profile.full_price_purchase_ratio,
+            "interaction_count":
+                price_behavior_profile.interaction_count,
+            "unique_products_count":
+                price_behavior_profile.unique_products_count,
+            "sample_count":
+                price_behavior_profile.sample_count,
+            "categories_count":
+                len(price_behavior_profile.categories),
         },
 
         # ----------------------------------------------------

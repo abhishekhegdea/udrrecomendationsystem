@@ -96,30 +96,34 @@ logger = logging.getLogger(
 # ===========================================================================
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "content": 0.13,
-    "collaborative": 0.10,
-    "trending": 0.09,
-    "seasonal": 0.07,
+    "content": 0.122,
+    "collaborative": 0.095,
+    "trending": 0.086,
+    "seasonal": 0.067,
 
     # ----------------------------------------------------------------------
     # PRECISE LOCATION RANKING
     # ----------------------------------------------------------------------
-    "location": 0.10,
+    "location": 0.095,
 
-    "category_affinity": 0.08,
-    "brand_affinity": 0.07,
-    "rating": 0.07,
-    "seller_freshness": 0.06,
-    "click_rate": 0.05,
-    "engagement": 0.13,
-    "price_affinity": 0.05,
+    "category_affinity": 0.076,
+    "brand_affinity": 0.067,
+    "rating": 0.067,
+    "seller_freshness": 0.057,
+    "click_rate": 0.048,
+    "engagement": 0.122,
+    "price_affinity": 0.048,
+    # Price behaviour (discount / premium / full-price affinity) joins the
+    # existing numeric price-affinity signal as an experimental 5% signal.
+    # The other weights were rebalanced proportionally so the total is 1.00.
+    "price_behavior": 0.050,
 }
 
 
 # Verify:
-# 0.13 + 0.10 + 0.09 + 0.07 + 0.10 +
-# 0.08 + 0.07 + 0.07 + 0.06 + 0.05 +
-# 0.13 + 0.05 = 1.00
+# 0.122 + 0.095 + 0.086 + 0.067 + 0.095 +
+# 0.076 + 0.067 + 0.067 + 0.057 + 0.048 +
+# 0.122 + 0.048 + 0.050 = 1.00
 
 
 DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
@@ -444,6 +448,39 @@ class ScoredProduct:
     preferred_price_lower: float = 0.0
 
     preferred_price_upper: float = 0.0
+
+    # ----------------------------------------------------------------------
+    # PRICE BEHAVIOUR (discount / premium / full-price affinity)
+    # ----------------------------------------------------------------------
+    # Effective score used in the weighted blend: the raw behavioural match
+    # pulled toward neutral 0.50 by price_behavior_confidence, so a
+    # low-confidence profile can never dominate ranking.
+    price_behavior_score: float = 0.50
+
+    price_behavior_raw_score: float = 0.50
+
+    price_behavior_confidence: float = 0.0
+
+    price_behavior_type: str = "UNKNOWN"
+
+    price_behavior_explanation: str = ""
+
+    # Candidate price diagnostics (for logging / API / debugging)
+    candidate_discount_percentage: float = 0.0
+
+    candidate_original_price: float = 0.0
+
+    candidate_premium_score: float = 0.0
+
+    candidate_full_price_score: float = 0.0
+
+    price_behavior_discount_contribution: float = 0.0
+
+    price_behavior_premium_contribution: float = 0.0
+
+    price_behavior_full_price_contribution: float = 0.0
+
+    price_behavior_used_category_profile: bool = False
 
     explanation: str = (
         "Recommended for you."
