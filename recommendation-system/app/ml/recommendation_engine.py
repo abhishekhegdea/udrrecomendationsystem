@@ -96,20 +96,14 @@ logger = logging.getLogger(
 # ===========================================================================
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "content": 0.15,
+    "content": 0.13,
     "collaborative": 0.10,
-    "trending": 0.10,
+    "trending": 0.09,
     "seasonal": 0.07,
 
     # ----------------------------------------------------------------------
     # PRECISE LOCATION RANKING
     # ----------------------------------------------------------------------
-    # Precise seller proximity is now a first-class ranking signal.
-    # The raw location score is calculated from seller distance and contributes
-    # directly to the recommendation score before business-rule re-ranking.
-    #
-    # location_score = exp(-seller_distance_km / distance_decay_km)
-    # location_contribution = location_score * location_weight
     "location": 0.10,
 
     "category_affinity": 0.08,
@@ -117,14 +111,15 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "rating": 0.07,
     "seller_freshness": 0.06,
     "click_rate": 0.05,
-    "engagement": 0.15,
+    "engagement": 0.13,
+    "price_affinity": 0.05,
 }
 
 
 # Verify:
-# 0.15 + 0.10 + 0.10 + 0.07 + 0.10 +
+# 0.13 + 0.10 + 0.09 + 0.07 + 0.10 +
 # 0.08 + 0.07 + 0.07 + 0.06 + 0.05 +
-# 0.15 = 1.00
+# 0.13 + 0.05 = 1.00
 
 
 DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
@@ -435,6 +430,20 @@ class ScoredProduct:
     click_rate_score: float = 0.0
 
     engagement_score: float = 0.0
+
+    price_affinity_score: float = 0.50
+
+    price_affinity_confidence: float = 0.0
+
+    price_distance: float = 0.0
+
+    price_is_in_range: bool = False
+
+    preferred_price: float = 0.0
+
+    preferred_price_lower: float = 0.0
+
+    preferred_price_upper: float = 0.0
 
     explanation: str = (
         "Recommended for you."
