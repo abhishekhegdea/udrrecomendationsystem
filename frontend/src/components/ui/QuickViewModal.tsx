@@ -15,6 +15,7 @@ interface QuickViewProduct {
   id: string
   name: string
   price: number
+  discount?: number
   currency?: string
   image?: string
   brand?: string
@@ -407,9 +408,35 @@ export function QuickViewModal({ product, open, onClose }: QuickViewModalProps) 
                     </h2>
 
                     {/* Price */}
-                    <p className="text-2xl md:text-3xl font-bold text-primary mb-4">
-                      {formatCurrency(product.price, product.currency)}
-                    </p>
+                    {(() => {
+                      const discountRate = Number(product.discount ?? 0)
+                      const hasDiscount = discountRate > 0
+                      const finalPrice = hasDiscount
+                        ? Math.max(0, product.price * (1 - discountRate / 100))
+                        : product.price
+
+                      return (
+                        <div className="flex flex-wrap items-baseline gap-3 mb-4">
+                          <p className="text-2xl md:text-3xl font-bold text-primary">
+                            {formatCurrency(finalPrice, product.currency)}
+                          </p>
+                          {hasDiscount && (
+                            <>
+                              <span className="text-base text-muted-foreground line-through font-medium">
+                                {formatCurrency(product.price, product.currency)}
+                              </span>
+                              <span className="px-2 py-0.5 bg-rose-600 text-white font-bold text-xs rounded-md flex items-center gap-1 shadow-sm">
+                                <span>🔥</span>
+                                <span>{discountRate}% OFF</span>
+                              </span>
+                              <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                                Save {formatCurrency(product.price - finalPrice, product.currency)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Rating */}
                     {(product.averageRating ?? 0) > 0 && (

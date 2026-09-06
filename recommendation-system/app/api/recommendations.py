@@ -845,6 +845,78 @@ def format_product(
                 ),
         },
 
+        # ====================================================
+        # DISCOUNT AFFINITY
+        # ====================================================
+        "discount_affinity_score":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "discount_affinity_score",
+                        0.50,
+                    )
+                ),
+                6,
+            ),
+
+        "discount_affinity_confidence":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "discount_affinity_confidence",
+                        0.0,
+                    )
+                ),
+                4,
+            ),
+
+        "user_discount_sensitivity":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "user_discount_sensitivity",
+                        0.0,
+                    )
+                ),
+                4,
+            ),
+
+        "preferred_discount_rate":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "preferred_discount_rate",
+                        0.0,
+                    )
+                ),
+                4,
+            ),
+
+        "discount_rate":
+            round(
+                _safe_float(
+                    getattr(
+                        product,
+                        "discount_rate",
+                        getattr(product, "discountRate", 0.0),
+                    )
+                ),
+                4,
+            ),
+
+        "original_price":
+            _safe_float(
+                getattr(
+                    product,
+                    "original_price",
+                    getattr(product, "originalPrice", getattr(product, "price", 0.0)),
+                )
+            ),
+
         "explanation":
             getattr(
                 product,
@@ -1920,6 +1992,45 @@ def get_home_recommendations(
                         "engagement",
                         effective_weights,
                     ),
+
+                "price_affinity":
+                    _contribution_percentage(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "price_affinity_score",
+                                0.50,
+                            )
+                        ),
+                        "price_affinity",
+                        effective_weights,
+                    ),
+
+                "price_behavior":
+                    _contribution_percentage(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "price_behavior_score",
+                                0.50,
+                            )
+                        ),
+                        "price_behavior",
+                        effective_weights,
+                    ),
+
+                "discount_affinity":
+                    _contribution_percentage(
+                        _safe_float(
+                            getattr(
+                                scored_product,
+                                "discount_affinity_score",
+                                0.50,
+                            )
+                        ),
+                        "discount_affinity",
+                        effective_weights,
+                    ),
             },
 
 
@@ -2188,6 +2299,97 @@ def get_home_recommendations(
                     ),
             },
 
+            # ====================================================
+            # DISCOUNT AFFINITY
+            # ====================================================
+            "discount_affinity_score":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "discount_affinity_score",
+                            0.50,
+                        )
+                    ),
+                    6,
+                ),
+
+            "discount_affinity_confidence":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "discount_affinity_confidence",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "discount_affinity_weight_percentage":
+                _weight_percentage(
+                    "discount_affinity",
+                    effective_weights,
+                ),
+
+            "discount_affinity_contribution_percentage":
+                _contribution_percentage(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "discount_affinity_score",
+                            0.50,
+                        )
+                    ),
+                    "discount_affinity",
+                    effective_weights,
+                ),
+
+            "user_discount_sensitivity":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "user_discount_sensitivity",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "preferred_discount_rate":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product,
+                            "preferred_discount_rate",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "discount_rate":
+                round(
+                    _safe_float(
+                        getattr(
+                            scored_product.product,
+                            "discountRate",
+                            0.0,
+                        )
+                    ),
+                    4,
+                ),
+
+            "original_price":
+                _safe_float(
+                    getattr(
+                        scored_product.product,
+                        "originalPrice",
+                        getattr(scored_product.product, "price", 0.0),
+                    )
+                ),
+
             "final_score":
                 round(
                     final_score,
@@ -2446,6 +2648,78 @@ def get_home_recommendations(
                     scored_product,
                     "candidate_full_price_score",
                     0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "discount_affinity_score",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "discount_affinity_score",
+                    0.50,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "discount_affinity_confidence",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "discount_affinity_confidence",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "user_discount_sensitivity",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "user_discount_sensitivity",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "preferred_discount_rate",
+            _safe_float(
+                getattr(
+                    scored_product,
+                    "preferred_discount_rate",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "discount_rate",
+            _safe_float(
+                getattr(
+                    scored_product.product,
+                    "discountRate",
+                    0.0,
+                )
+            ),
+        )
+
+        setattr(
+            product,
+            "original_price",
+            _safe_float(
+                getattr(
+                    scored_product.product,
+                    "originalPrice",
+                    getattr(scored_product.product, "price", 0.0),
                 )
             ),
         )

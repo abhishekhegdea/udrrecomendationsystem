@@ -171,10 +171,10 @@ def test_default_location_configuration():
 
 def test_personalized_location_weight_is_rebalanced():
     # Location stayed near its original weight but was rebalanced when the
-    # price_behavior signal (0.05) joined the weight set.
+    # price_behavior (0.05) and discount_affinity (0.05) signals joined the weight set.
     assert math.isclose(
         PERSONALIZED_CLICK_WEIGHTS["location"],
-        0.095,
+        0.080,
         rel_tol=1e-12,
     )
     assert math.isclose(

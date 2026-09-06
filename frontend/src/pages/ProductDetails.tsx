@@ -213,7 +213,35 @@ export function ProductDetailsPage() {
             {product.name}
           </h1>
           
-          <p className="text-2xl text-primary font-semibold mb-4">{formatCurrency(product.price, product.currency)}</p>
+          {(() => {
+            const discountRate = Number(product.discount ?? 0)
+            const hasDiscount = discountRate > 0
+            const finalPrice = hasDiscount
+              ? Math.max(0, product.price * (1 - discountRate / 100))
+              : product.price
+
+            return (
+              <div className="flex flex-wrap items-baseline gap-3 mb-4">
+                <span className="text-3xl font-display font-bold text-primary">
+                  {formatCurrency(finalPrice, product.currency)}
+                </span>
+                {hasDiscount && (
+                  <>
+                    <span className="text-xl text-muted-foreground line-through font-medium">
+                      {formatCurrency(product.price, product.currency)}
+                    </span>
+                    <span className="px-2.5 py-1 bg-rose-600 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1">
+                      <span>🔥</span>
+                      <span>{discountRate}% OFF</span>
+                    </span>
+                    <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      You Save {formatCurrency(product.price - finalPrice, product.currency)} ({discountRate}%)
+                    </span>
+                  </>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Rating Display */}
           {(product.averageRating ?? 0) > 0 && (

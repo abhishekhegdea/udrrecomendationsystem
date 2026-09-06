@@ -450,6 +450,17 @@ class ScoredProduct:
     preferred_price_upper: float = 0.0
 
     # ----------------------------------------------------------------------
+    # USER DISCOUNT AFFINITY
+    # ----------------------------------------------------------------------
+    discount_affinity_score: float = 0.50
+
+    discount_affinity_confidence: float = 0.0
+
+    user_discount_sensitivity: float = 0.50
+
+    preferred_discount_rate: float = 0.0
+
+    # ----------------------------------------------------------------------
     # PRICE BEHAVIOUR (discount / premium / full-price affinity)
     # ----------------------------------------------------------------------
     # Effective score used in the weighted blend: the raw behavioural match

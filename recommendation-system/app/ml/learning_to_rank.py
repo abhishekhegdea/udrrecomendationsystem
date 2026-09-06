@@ -56,6 +56,7 @@ LTR_FEATURE_KEYS: Tuple[str, ...] = (
     "engagement",
     "price_affinity",
     "price_behavior",
+    "discount_affinity",
 )
 
 
@@ -94,6 +95,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "price_affinity": 0.50,
         # New users have little price-behaviour evidence; keep the signal low.
         "price_behavior": 0.50,
+        "discount_affinity": 0.50,
     },
     USER_SEGMENT_ACTIVE: {
         "content": 1.05,
@@ -110,6 +112,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "engagement": 1.25,
         "price_affinity": 1.20,
         "price_behavior": 1.20,
+        "discount_affinity": 1.20,
     },
     USER_SEGMENT_RETURNING: {
         "content": 1.10,
@@ -126,6 +129,7 @@ SEGMENT_WEIGHT_MULTIPLIERS: Dict[str, Dict[str, float]] = {
         "engagement": 1.00,
         "price_affinity": 1.05,
         "price_behavior": 1.05,
+        "discount_affinity": 1.05,
     },
 }
 

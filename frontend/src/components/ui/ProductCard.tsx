@@ -24,6 +24,7 @@ interface Product {
   id: string
   name: string
   price: number
+  discount?: number
   seller_name?: string
   seller_new?: boolean
   brand?: string
@@ -63,6 +64,12 @@ export function ProductCard({
   const inWishlist = isInWishlist(product.id)
 
   const safeImage = getProductImageUrl(product.image)
+
+  const discountRate = Number(product.discount ?? 0)
+  const hasDiscount = discountRate > 0
+  const finalPrice = hasDiscount
+    ? Math.max(0, product.price * (1 - discountRate / 100))
+    : product.price
 
   const recommendationRunId =
     product.recommendation_run_id
@@ -489,6 +496,14 @@ export function ProductCard({
           </button>
         </div>
 
+        {/* Discount Badge */}
+        {hasDiscount && (
+          <div className="absolute top-3 left-3 z-20 px-2 py-0.5 bg-rose-600 text-white text-[10px] font-extrabold rounded-md shadow-md flex items-center gap-1">
+            <span>🔥</span>
+            <span>{discountRate}% OFF</span>
+          </div>
+        )}
+
         {/* Wishlist */}
         <button
           onClick={handleWishlist}
@@ -524,31 +539,42 @@ export function ProductCard({
 
       {/* Details */}
       <div className="mt-4 space-y-1">
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-start gap-2">
           <h3
             className="
               text-sm
               font-semibold
               text-foreground
               truncate
-              pr-2
+              flex-1
             "
           >
             {product.name}
           </h3>
 
-          <p
-            className="
-              text-sm
-              font-bold
-              text-primary
-            "
-          >
-            {formatCurrency(
-              product.price,
-              product.currency
+          <div className="flex flex-col items-end flex-shrink-0">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-bold text-primary">
+                {formatCurrency(
+                  finalPrice,
+                  product.currency
+                )}
+              </span>
+              {hasDiscount && (
+                <span className="text-[11px] text-muted-foreground line-through font-medium">
+                  {formatCurrency(
+                    product.price,
+                    product.currency
+                  )}
+                </span>
+              )}
+            </div>
+            {hasDiscount && (
+              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                Save {discountRate}%
+              </span>
             )}
-          </p>
+          </div>
         </div>
 
         <p

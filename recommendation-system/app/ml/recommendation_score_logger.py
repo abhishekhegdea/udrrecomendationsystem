@@ -163,6 +163,11 @@ FEATURE_SPECS: Tuple[
         "price_behavior_score",
         "price_behavior",
     ),
+    (
+        "discount_affinity",
+        "discount_affinity_score",
+        "discount_affinity",
+    ),
 )
 
 
@@ -695,6 +700,46 @@ def persist_recommendation_run(
                     0.0,
                 )
             ),
+            discountAffinityScore=_safe_float(
+                raw.get("discount_affinity", 0.0)
+            ),
+            discountAffinityConfidence=_safe_float(
+                getattr(
+                    scored_product,
+                    "discount_affinity_confidence",
+                    0.0,
+                )
+            ),
+            userDiscountSensitivity=(
+                _safe_float(
+                    getattr(
+                        scored_product,
+                        "user_discount_sensitivity",
+                        None,
+                    )
+                )
+                if getattr(
+                    scored_product,
+                    "user_discount_sensitivity",
+                    None,
+                ) is not None
+                else None
+            ),
+            preferredDiscountRate=(
+                _safe_float(
+                    getattr(
+                        scored_product,
+                        "preferred_discount_rate",
+                        None,
+                    )
+                )
+                if getattr(
+                    scored_product,
+                    "preferred_discount_rate",
+                    None,
+                ) is not None
+                else None
+            ),
 
             # ------------------------------------------------------------
             # Product click diagnostics
@@ -798,6 +843,9 @@ def persist_recommendation_run(
             ),
             priceBehaviorContribution=_safe_float(
                 contributions["price_behavior"]
+            ),
+            discountAffinityContribution=_safe_float(
+                contributions.get("discount_affinity", 0.0)
             ),
 
             # ------------------------------------------------------------

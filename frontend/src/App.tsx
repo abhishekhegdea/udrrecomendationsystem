@@ -91,6 +91,7 @@ function AppRoutes() {
           } 
         />
         <Route path="product/:id" element={<ProductDetailsPage />} />
+        <Route path="products" element={<SearchPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="category/:categoryId" element={<SearchPage />} />
       </Route>

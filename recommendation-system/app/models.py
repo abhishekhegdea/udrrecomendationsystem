@@ -1068,6 +1068,28 @@ class RecommendationScoreSnapshot(Base):
         default=0.0,
     )
 
+    discountAffinityScore = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    discountAffinityConfidence = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    userDiscountSensitivity = Column(
+        Float,
+        nullable=True,
+    )
+
+    preferredDiscountRate = Column(
+        Float,
+        nullable=True,
+    )
+
     # -----------------------------------------------------------------------
     # Product-click diagnostics
     # -----------------------------------------------------------------------
@@ -1199,6 +1221,12 @@ class RecommendationScoreSnapshot(Base):
     )
 
     priceBehaviorContribution = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    discountAffinityContribution = Column(
         Float,
         nullable=False,
         default=0.0,

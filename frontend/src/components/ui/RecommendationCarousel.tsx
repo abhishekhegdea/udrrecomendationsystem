@@ -784,6 +784,12 @@ export function RecommendationCarousel({
                       ? item.currency
                       : 'INR',
 
+                  discount:
+                    typeof item.discount ===
+                    'number'
+                      ? item.discount
+                      : undefined,
+
                   seller_name:
                     typeof item.seller_name ===
                     'string'
