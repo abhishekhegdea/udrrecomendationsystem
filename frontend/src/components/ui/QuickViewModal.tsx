@@ -25,6 +25,7 @@ interface QuickViewProduct {
   description?: string
   materials?: string[]
   categoryName?: string
+  inventory?: number
 }
 
 interface QuickViewModalProps {
@@ -35,7 +36,7 @@ interface QuickViewModalProps {
 
 export function QuickViewModal({ product, open, onClose }: QuickViewModalProps) {
   const { user } = useAuth()
-  const { addItem } = useCart()
+  const { items, addItem } = useCart()
   const { toggleWishlist, isInWishlist } = useWishlist()
   const [quantity, setQuantity] = useState(1)
   const viewTrackedRef = useRef(false)
@@ -159,14 +160,18 @@ export function QuickViewModal({ product, open, onClose }: QuickViewModalProps) 
   const inWishlist = isInWishlist(product.id)
 
   const handleAddToCart = () => {
-    addItem({
+    const inv = fullProduct?.inventory !== undefined ? Number(fullProduct.inventory) : (product?.inventory !== undefined ? Number(product.inventory) : undefined)
+    const added = addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       quantity,
       image: images[0] || product.image,
-      currency: product.currency
+      currency: product.currency,
+      inventory: inv,
     })
+    if (!added) return
+
     // Track CART event
     if (user) {
       trackCart(user.id, product.id, 'add', {
@@ -483,60 +488,105 @@ export function QuickViewModal({ product, open, onClose }: QuickViewModalProps) 
                   </div>
 
                   {/* Actions */}
-                  <div className="space-y-3 pt-4 border-t border-border">
-                    {/* Quantity selector */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">Quantity</span>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                          className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors text-muted-foreground hover:text-foreground"
-                          aria-label="Decrease quantity"
+                  {(() => {
+                    const inv = fullProduct?.inventory !== undefined ? Number(fullProduct.inventory) : (product?.inventory !== undefined ? Number(product.inventory) : 99)
+                    const inCartItem = items.find((i) => i.productId === product.id)
+                    const currentInCart = inCartItem?.quantity || 0
+                    const remainingStock = Math.max(0, inv - currentInCart)
+                    const isOutOfStock = inv <= 0
+                    const isCartMaxed = inv > 0 && currentInCart >= inv
+
+                    return (
+                      <div className="space-y-3 pt-4 border-t border-border">
+                        {/* Stock indicator badge */}
+                        <div className="flex items-center justify-between">
+                          {isOutOfStock ? (
+                            <span className="text-xs font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 px-2.5 py-1 rounded-full">
+                              Out of Stock
+                            </span>
+                          ) : inv <= 2 ? (
+                            <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 px-2.5 py-1 rounded-full">
+                              Only {inv} left in stock
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-2.5 py-1 rounded-full">
+                              In Stock ({inv} available)
+                            </span>
+                          )}
+
+                          {currentInCart > 0 && (
+                            <span className="text-xs text-muted-foreground font-medium">
+                              ({currentInCart} in cart)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Quantity selector */}
+                        {!isOutOfStock && !isCartMaxed && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-foreground">Quantity</span>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                                disabled={quantity <= 1}
+                                className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Decrease quantity"
+                              >
+                                <Minus className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="w-8 text-center text-sm font-bold text-foreground">{quantity}</span>
+                              <button
+                                onClick={() => setQuantity((q) => Math.min(remainingStock, q + 1))}
+                                disabled={quantity >= remainingStock}
+                                className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Increase quantity"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {isCartMaxed && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg">
+                            ⚠️ Maximum available stock ({inv}) is in your cart.
+                          </p>
+                        )}
+
+                        {/* Buttons */}
+                        <div className="flex gap-3">
+                          <button
+                            onClick={handleAddToCart}
+                            disabled={isOutOfStock || isCartMaxed}
+                            className="flex-1 h-12 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-primary/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ShoppingBag className="h-4 w-4" />
+                            {isOutOfStock ? 'Out of Stock' : isCartMaxed ? 'Max in Cart' : 'Add to Cart'}
+                          </button>
+                          <button
+                            onClick={handleWishlist}
+                            className={`w-12 h-12 rounded-xl border transition-all flex items-center justify-center flex-shrink-0 ${
+                              inWishlist
+                                ? 'bg-red-50 border-red-200 text-red-500'
+                                : 'bg-muted border-border text-muted-foreground hover:text-red-500 hover:border-red-200'
+                            }`}
+                            aria-label="Toggle wishlist"
+                          >
+                            <Heart className={`h-4 w-4 ${inWishlist ? 'fill-red-500' : ''}`} />
+                          </button>
+                        </div>
+
+                        {/* View full details */}
+                        <Link
+                          to={`/product/${product.id}`}
+                          onClick={onClose}
+                          className="block w-full text-center py-2.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors rounded-xl hover:bg-primary/5"
                         >
-                          <Minus className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="w-8 text-center text-sm font-bold text-foreground">{quantity}</span>
-                        <button
-                          onClick={() => setQuantity(q => Math.min(99, q + 1))}
-                          className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors text-muted-foreground hover:text-foreground"
-                          aria-label="Increase quantity"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
+                          View Full Details →
+                        </Link>
                       </div>
-                    </div>
-
-                    {/* Buttons */}
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handleAddToCart}
-                        className="flex-1 h-12 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-primary/20 active:scale-[0.98]"
-                      >
-                        <ShoppingBag className="h-4 w-4" />
-                        Add to Cart
-                      </button>
-                      <button
-                        onClick={handleWishlist}
-                        className={`w-12 h-12 rounded-xl border transition-all flex items-center justify-center flex-shrink-0 ${
-                          inWishlist
-                            ? 'bg-red-50 border-red-200 text-red-500'
-                            : 'bg-muted border-border text-muted-foreground hover:text-red-500 hover:border-red-200'
-                        }`}
-                        aria-label="Toggle wishlist"
-                      >
-                        <Heart className={`h-4 w-4 ${inWishlist ? 'fill-red-500' : ''}`} />
-                      </button>
-                    </div>
-
-                    {/* View full details */}
-                    <Link
-                      to={`/product/${product.id}`}
-                      onClick={onClose}
-                      className="block w-full text-center py-2.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors rounded-xl hover:bg-primary/5"
-                    >
-                      View Full Details →
-                    </Link>
-                  </div>
+                    )
+                  })()}
                 </div>
               </div>
             </motion.div>

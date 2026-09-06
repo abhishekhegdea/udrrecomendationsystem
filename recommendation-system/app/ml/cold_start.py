@@ -40,6 +40,7 @@ from app.ml.recommendation_engine import (
     distance_location_score,
 )
 from app.ml.seller_boost import CANCEL_PENALTY_WEIGHT, fair_rank
+from app.ml.inventory_aware import compute_inventory_fulfillment_score
 from app.models import (
     CartItem,
     Category,
@@ -771,23 +772,26 @@ def compute_cold_start_scores(
             seller_exploration_score = 0.6
 
         # G. Exploration Score [0, 1]
-        # Promotes products with good inventory and moderate popularity (non-obvious winners)
+        # Promotes products with verified inventory fulfillment and moderate popularity
         inv = int(getattr(product, "inventory", 0) or 0)
-        inv_factor = _clamp01(inv / 20.0)
+        inv_factor = compute_inventory_fulfillment_score(inv)
         serendipity_factor = 1.0 - (pop / max_popularity)
         exploration_score = _clamp01(0.5 * inv_factor + 0.5 * serendipity_factor)
 
         # Combine into ColdStartScore
-        combined_score = (
-            w.get("trending", 0.30) * trending_score
-            + w.get("seasonal", 0.20) * seasonal_score
-            + w.get("quality", 0.20) * quality_score
-            + w.get("category_popularity", 0.10) * category_popularity_score
-            + w.get("location", 0.05) * location_score
-            + w.get("seller_exploration", 0.10) * seller_exploration_score
-            + w.get("exploration", 0.05) * exploration_score
-        )
-        combined_score = _clamp01(combined_score)
+        if inv <= 0:
+            combined_score = 0.0
+        else:
+            combined_score = (
+                w.get("trending", 0.30) * trending_score
+                + w.get("seasonal", 0.20) * seasonal_score
+                + w.get("quality", 0.20) * quality_score
+                + w.get("category_popularity", 0.10) * category_popularity_score
+                + w.get("location", 0.05) * location_score
+                + w.get("seller_exploration", 0.10) * seller_exploration_score
+                + w.get("exploration", 0.05) * exploration_score
+            )
+            combined_score = _clamp01(combined_score)
 
         # Determine primary candidate origin / explanation
         primary_source = source_map.get(pid, "cold_start")

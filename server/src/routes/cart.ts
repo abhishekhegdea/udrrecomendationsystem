@@ -29,10 +29,7 @@ router.get('/:userId', async (req, res) => {
   }
 });
 
-// POST add to cart (idempotent — adding a product already in the cart
-// atomically increments its quantity instead of hitting the unique-constraint
-// 500; the atomic { increment } avoids read-then-write races under
-// double-clicks)
+// POST add to cart (idempotent with strict inventory limit enforcement)
 router.post('/', async (req, res) => {
   try {
     const { userId, productId } = req.body;
@@ -41,22 +38,48 @@ router.post('/', async (req, res) => {
 
     const product = await prisma.product.findUnique({
       where: { id: productId },
-      select: { categoryId: true, brandId: true },
+      select: { categoryId: true, brandId: true, inventory: true, name: true },
     });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (product.inventory <= 0) {
+      return res.status(400).json({
+        error: `"${product.name}" is currently out of stock.`,
+        availableInventory: 0,
+      });
+    }
+
+    const existing = await prisma.cartItem.findUnique({
+      where: { userId_productId: { userId, productId } },
+    });
+
+    const currentQty = existing?.quantity || 0;
+    const newTotal = currentQty + quantity;
+
+    if (newTotal > product.inventory) {
+      return res.status(400).json({
+        error: `Cannot add ${quantity} more item(s). Only ${product.inventory} unit(s) available in stock${currentQty > 0 ? ` (you already have ${currentQty} in cart)` : ''}.`,
+        availableInventory: product.inventory,
+        currentInCart: currentQty,
+      });
+    }
 
     const cartItem = await prisma.cartItem.upsert({
       where: { userId_productId: { userId, productId } },
       update: {
         quantity: { increment: quantity },
-        categoryId: product?.categoryId,
-        brandId: product?.brandId,
+        categoryId: product.categoryId,
+        brandId: product.brandId,
       },
       create: {
         userId,
         productId,
         quantity,
-        categoryId: product?.categoryId,
-        brandId: product?.brandId,
+        categoryId: product.categoryId,
+        brandId: product.brandId,
       },
       include: cartInclude,
     });
@@ -81,22 +104,33 @@ router.put('/:userId/:productId', async (req, res) => {
 
     const product = await prisma.product.findUnique({
       where: { id: productId },
-      select: { categoryId: true, brandId: true },
+      select: { categoryId: true, brandId: true, inventory: true, name: true },
     });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (quantity > product.inventory) {
+      return res.status(400).json({
+        error: `Requested quantity (${quantity}) exceeds available stock (${product.inventory} available).`,
+        availableInventory: product.inventory,
+      });
+    }
 
     const cartItem = await prisma.cartItem.upsert({
       where: { userId_productId: { userId, productId } },
       update: {
         quantity,
-        categoryId: product?.categoryId,
-        brandId: product?.brandId,
+        categoryId: product.categoryId,
+        brandId: product.brandId,
       },
       create: {
         userId,
         productId,
         quantity,
-        categoryId: product?.categoryId,
-        brandId: product?.brandId,
+        categoryId: product.categoryId,
+        brandId: product.brandId,
       },
       include: cartInclude,
     });

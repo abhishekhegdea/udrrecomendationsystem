@@ -19,6 +19,7 @@ import {
   trackRecommendationImpression,
   trackWishlist,
 } from '@/lib/track'
+import { toast } from 'sonner'
 
 interface Product {
   id: string
@@ -39,6 +40,9 @@ interface Product {
   seller_distance_km?: number | null
   nearby_seller?: boolean
   location_priority_applied?: boolean
+  seller_badge?: string
+  seller_trust_score?: number
+  inventory?: number
 
   // Present only when this card came from a persisted recommendation run.
   recommendation_run_id?: string
@@ -248,14 +252,19 @@ export function ProductCard({
     e.preventDefault()
     e.stopPropagation()
 
-    addItem({
+    const inv = product.inventory !== undefined ? Number(product.inventory) : undefined
+    const added = addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       quantity: 1,
       image: safeImage,
       currency: product.currency,
+      inventory: inv,
     })
+
+    if (!added) return
+    toast.success('Added to cart!')
 
     /*
      * We can continue storing this in ClickEvent/UserBehaviour for analytics,
@@ -453,6 +462,19 @@ export function ProductCard({
           </div>
         )}
 
+        {/* Stock Badge */}
+        {product.inventory !== undefined && (
+          product.inventory <= 0 ? (
+            <div className="absolute top-3 right-3 bg-rose-600/90 text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider shadow-sm z-10 backdrop-blur-md">
+              Out of Stock
+            </div>
+          ) : product.inventory <= 2 ? (
+            <div className="absolute top-3 right-3 bg-amber-500/90 text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider shadow-sm z-10 backdrop-blur-md">
+              Only {product.inventory} left
+            </div>
+          ) : null
+        )}
+
         {/* Quick View */}
         <div
           className="
@@ -577,11 +599,12 @@ export function ProductCard({
           </div>
         </div>
 
-        <p
+        <div
           className="
             text-xs
             text-muted-foreground
             truncate
+            flex items-center gap-1.5
           "
         >
           {product.brand ? (
@@ -595,7 +618,7 @@ export function ProductCard({
               {product.brand}
             </span>
           ) : (
-            <>
+            <span>
               By{' '}
               <span
                 className="
@@ -607,9 +630,14 @@ export function ProductCard({
                 {product.seller_name ||
                   'UdrCrafts Artisan'}
               </span>
-            </>
+            </span>
           )}
-        </p>
+          {product.seller_badge && (
+            <span className="inline-block shrink-0 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800">
+              {product.seller_badge}
+            </span>
+          )}
+        </div>
 
         {(product.averageRating ?? 0) > 0 && (
           <div
@@ -673,17 +701,14 @@ export function ProductCard({
 
         <button
           onClick={handleAddToCart}
-          className="
+          disabled={product.inventory !== undefined && product.inventory <= 0}
+          className={`
             w-full
             mt-3
             py-2
-            bg-primary/10
-            text-primary
             font-semibold
             rounded-lg
             text-xs
-            hover:bg-primary
-            hover:text-primary-foreground
             transition-colors
             flex
             items-center
@@ -692,11 +717,18 @@ export function ProductCard({
             opacity-0
             group-hover:opacity-100
             focus:opacity-100
-          "
+            ${
+              product.inventory !== undefined && product.inventory <= 0
+                ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-60'
+                : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'
+            }
+          `}
         >
           <ShoppingBag className="h-3 w-3" />
 
-          Add to Cart
+          {product.inventory !== undefined && product.inventory <= 0
+            ? 'Out of Stock'
+            : 'Add to Cart'}
         </button>
       </div>
     </Link>

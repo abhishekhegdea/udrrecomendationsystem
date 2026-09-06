@@ -90,6 +90,7 @@ router.post('/checkout', async (req, res) => {
       // Derive line items from the persisted rows — quantities and prices
       // come from the DB, never from the client. Each order item records
       // the CartItem row it was created from (audit reference).
+      const dispatchTarget = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // 48-hour SLA
       lineItems = selected.map((c) => ({
         productId: c.productId,
         quantity: c.quantity,
@@ -97,10 +98,12 @@ router.post('/checkout', async (req, res) => {
         cartItemId: c.id,
         categoryId: c.categoryId ?? c.product?.categoryId ?? null,
         brandId: c.brandId ?? c.product?.brandId ?? null,
+        expectedDispatchAt: dispatchTarget,
       }));
       purchasedCartIds = selected.map((c) => c.id);
     } else if (items && items.length) {
       // Legacy fallback — no persisted cart for this user
+      const dispatchTarget = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // 48-hour SLA
       const enrichedItems = [];
       for (const item of items) {
         const product = await prisma.product.findUnique({ where: { id: item.productId } });
@@ -113,6 +116,7 @@ router.post('/checkout', async (req, res) => {
           priceAtBuy: item.priceAtBuy ?? product.price,
           categoryId: product.categoryId ?? null,
           brandId: product.brandId ?? null,
+          expectedDispatchAt: dispatchTarget,
         });
       }
       lineItems = enrichedItems;
@@ -138,6 +142,24 @@ router.post('/checkout', async (req, res) => {
         },
         include: { items: true },
       });
+
+      // 1. Verify stock availability for all products
+      for (const item of lineItems) {
+        const prod = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { id: true, name: true, inventory: true },
+        });
+
+        if (!prod) {
+          throw new Error(`Product not found (ID: ${item.productId}).`);
+        }
+
+        if (prod.inventory < item.quantity) {
+          throw new Error(
+            `Insufficient stock for "${prod.name}". Requested ${item.quantity}, but only ${prod.inventory} available.`
+          );
+        }
+      }
 
       // 2. Decrement Inventory for each product
       for (const item of lineItems) {

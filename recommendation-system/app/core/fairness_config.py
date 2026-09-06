@@ -55,6 +55,9 @@ def get_config(db: Session) -> FairnessConfigData:
     FairnessConfigData
         The current (or default) configuration.
     """
+    if db is None:
+        return FairnessConfigData()
+
     from app.models import FairnessConfig
 
     row = db.query(FairnessConfig).first()

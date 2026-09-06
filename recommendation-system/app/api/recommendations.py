@@ -76,6 +76,12 @@ from app.ml.seller_boost import (
     fair_rank,
 )
 
+from app.ml.inventory_aware import (
+    compute_inventory_fulfillment_score,
+    get_inventory_status,
+    get_inventory_explanation,
+)
+
 from app.models import (
     Product,
     Seller,
@@ -852,6 +858,40 @@ def format_product(
                     getattr(product, "originalPrice", getattr(product, "price", 0.0)),
                 )
             ),
+
+        # ====================================================
+        # INVENTORY AWARENESS & FULFILLMENT READINESS
+        # ====================================================
+        "inventory": int(getattr(product, "inventory", 0) or 0),
+
+        "inventory_score": round(
+            _safe_float(
+                getattr(
+                    product,
+                    "inventory_score",
+                    compute_inventory_fulfillment_score(int(getattr(product, "inventory", 0) or 0)),
+                )
+            ),
+            4,
+        ),
+
+        "inventory_status": str(
+            getattr(
+                product,
+                "inventory_status",
+                get_inventory_status(int(getattr(product, "inventory", 0) or 0)),
+            )
+        ),
+
+        "inventory_ready": bool(int(getattr(product, "inventory", 0) or 0) > 0),
+
+        "inventory_explanation": str(
+            getattr(
+                product,
+                "inventory_explanation",
+                get_inventory_explanation(int(getattr(product, "inventory", 0) or 0)),
+            )
+        ),
 
         "explanation":
             getattr(

@@ -161,8 +161,32 @@ def apply_return_penalty(
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — Score boost
+# Phase 1 — Score boost & Seller Trust Adjustment
 # ---------------------------------------------------------------------------
+
+def apply_seller_trust_adjustment(
+    products: List[Product],
+    attribute: str = "final_score",
+    trust_weight: float = 0.08,
+) -> None:
+    """
+    Applies a continuous score adjustment based on the seller's composite trust score
+    (considering rating, fulfilment, dispatch SLA, cancellations, and quality returns).
+
+    A seller with trust score > 0.70 (the neutral baseline) receives a positive boost.
+    A seller with trust score < 0.70 receives a proportional penalty.
+    """
+    adjusted_count = 0
+    for p in products:
+        if p.seller:
+            trust = getattr(p.seller, "sellerTrustScore", 0.70)
+            if trust is None:
+                trust = 0.70
+            adjustment = (float(trust) - 0.70) * trust_weight
+            current = getattr(p, attribute, 0.0)
+            setattr(p, attribute, current + adjustment)
+            adjusted_count += 1
+
 
 def boost_new_sellers(
     products: List[Product],
@@ -480,6 +504,9 @@ def fair_rank(
 
     # Phase 0b — Quality-return penalty (negative score for quality returns)
     apply_return_penalty(products, penalty_weight=return_penalty_weight, attribute=attribute)
+
+    # Phase 0c — Continuous Seller Trust Adjustment (Rating, Fulfilment, Dispatch SLA)
+    apply_seller_trust_adjustment(products, attribute=attribute)
 
     # Phase 1
     boost_new_sellers(products, boost_amount=boost_amount, attribute=attribute)

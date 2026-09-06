@@ -70,6 +70,13 @@ from app.ml.seller_boost import (
     CANCEL_PENALTY_WEIGHT,
 )
 
+from app.ml.inventory_aware import (
+    compute_inventory_fulfillment_score,
+    get_inventory_status,
+    get_inventory_explanation,
+    STATUS_OUT_OF_STOCK,
+)
+
 from app.models import (
     CartItem,
     ClickEvent,
@@ -96,34 +103,36 @@ logger = logging.getLogger(
 # ===========================================================================
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "content": 0.122,
-    "collaborative": 0.095,
-    "trending": 0.086,
-    "seasonal": 0.067,
+    "content": 0.115,
+    "collaborative": 0.090,
+    "trending": 0.080,
+    "seasonal": 0.065,
 
     # ----------------------------------------------------------------------
     # PRECISE LOCATION RANKING
     # ----------------------------------------------------------------------
-    "location": 0.095,
+    "location": 0.090,
 
-    "category_affinity": 0.076,
-    "brand_affinity": 0.067,
-    "rating": 0.067,
-    "seller_freshness": 0.057,
-    "click_rate": 0.048,
-    "engagement": 0.122,
-    "price_affinity": 0.048,
-    # Price behaviour (discount / premium / full-price affinity) joins the
-    # existing numeric price-affinity signal as an experimental 5% signal.
-    # The other weights were rebalanced proportionally so the total is 1.00.
+    "category_affinity": 0.070,
+    "brand_affinity": 0.065,
+    "rating": 0.065,
+    "seller_freshness": 0.055,
+    "click_rate": 0.045,
+    "engagement": 0.115,
+    "price_affinity": 0.045,
     "price_behavior": 0.050,
+
+    # ----------------------------------------------------------------------
+    # REAL-TIME INVENTORY & FULFILLMENT READINESS
+    # ----------------------------------------------------------------------
+    "inventory": 0.050,
 }
 
 
 # Verify:
-# 0.122 + 0.095 + 0.086 + 0.067 + 0.095 +
-# 0.076 + 0.067 + 0.067 + 0.057 + 0.048 +
-# 0.122 + 0.048 + 0.050 = 1.00
+# 0.115 + 0.090 + 0.080 + 0.065 + 0.090 +
+# 0.070 + 0.065 + 0.065 + 0.055 + 0.045 +
+# 0.115 + 0.045 + 0.050 + 0.050 = 1.00
 
 
 DEFAULT_CANDIDATE_LIMITS: Dict[str, int] = {
@@ -152,7 +161,7 @@ DEFAULT_LOCATION_PRIORITY_MIN_SCORE = 0.15
 
 DEFAULT_MIN_RATING = 0.0
 
-DEFAULT_MIN_INVENTORY = 0
+DEFAULT_MIN_INVENTORY = 1
 
 DEFAULT_MAX_PER_CATEGORY = 0.30
 
@@ -493,6 +502,19 @@ class ScoredProduct:
 
     price_behavior_used_category_profile: bool = False
 
+    # ----------------------------------------------------------------------
+    # INVENTORY AWARENESS & FULFILLMENT READINESS
+    # ----------------------------------------------------------------------
+    inventory_score: float = 0.0
+
+    inventory_units: int = 0
+
+    inventory_status: str = "IN_STOCK"
+
+    inventory_ready: bool = True
+
+    inventory_explanation: str = ""
+
     explanation: str = (
         "Recommended for you."
     )
@@ -735,7 +757,7 @@ class CandidateGenerator:
                         joinedload(Product.images),
                         joinedload(Product.seller),
                     )
-                    .filter(Product.sellerId.in_(seller_ids))
+                    .filter(Product.sellerId.in_(seller_ids), Product.inventory > 0)
                     .limit(max(limits["nearby_sellers"] * 4, 60))
                     .all()
                 )
@@ -774,7 +796,7 @@ class CandidateGenerator:
                 self.db.query(Product)
                 .options(joinedload(Product.images))
                 .join(Seller)
-                .filter(or_(*local_conditions))
+                .filter(or_(*local_conditions), Product.inventory > 0)
                 .order_by(Product.popularity.desc())
                 .limit(limits["local_sellers"])
                 .all()
@@ -816,7 +838,7 @@ class CandidateGenerator:
 
             for product in similar:
 
-                if product.id in seen:
+                if product.id in seen or (getattr(product, "inventory", 0) or 0) <= 0:
                     continue
 
                 seen.add(
@@ -868,7 +890,7 @@ class CandidateGenerator:
                             limit=(
                                 limits[
                                     "collaborative"
-                                ]
+                               ]
                                 // 3
                             ),
                         )
@@ -881,6 +903,7 @@ class CandidateGenerator:
                         if (
                             product.id
                             in seen
+                            or (getattr(product, "inventory", 0) or 0) <= 0
                         ):
                             continue
 
@@ -910,6 +933,7 @@ class CandidateGenerator:
                     Product.images
                 )
             )
+            .filter(Product.inventory > 0)
             .order_by(
                 Product
                 .popularity
@@ -957,7 +981,8 @@ class CandidateGenerator:
             .join(Seller)
             .filter(
                 Seller.isNewSeller
-                == True
+                == True,
+                Product.inventory > 0,
             )
             .order_by(
                 Product
@@ -1015,7 +1040,8 @@ class CandidateGenerator:
                 .filter(
                     Product.categoryId.in_(
                         preferred_categories
-                    )
+                    ),
+                    Product.inventory > 0,
                 )
                 .order_by(
                     Product
@@ -1068,7 +1094,7 @@ class CandidateGenerator:
 
         for product in search_products:
 
-            if product.id in seen:
+            if product.id in seen or (getattr(product, "inventory", 0) or 0) <= 0:
                 continue
 
             seen.add(
@@ -1104,6 +1130,7 @@ class CandidateGenerator:
                         Product.images
                     )
                 )
+                .filter(Product.inventory > 0)
                 .order_by(
                     Product.id
                 )
@@ -1653,6 +1680,16 @@ class FeatureComputer:
                     search_terms,
                 )
             )
+
+            # --------------------------------------------------------------
+            # REAL-TIME INVENTORY & FULFILLMENT READINESS
+            # --------------------------------------------------------------
+            inv_units = int(getattr(product, "inventory", 0) or 0)
+            scored_product.inventory_units = inv_units
+            scored_product.inventory_score = compute_inventory_fulfillment_score(inv_units)
+            scored_product.inventory_status = get_inventory_status(inv_units)
+            scored_product.inventory_ready = inv_units > 0
+            scored_product.inventory_explanation = get_inventory_explanation(inv_units)
 
             results.append(
                 scored_product
@@ -2657,16 +2694,29 @@ class ScoreBlender:
                     0.0,
                 )
                 * scored_product.engagement_score
+
+                # ----------------------------------------------------------
+                # INVENTORY & FULFILLMENT READINESS
+                # ----------------------------------------------------------
+                + weights.get(
+                    "inventory",
+                    0.0,
+                )
+                * scored_product.inventory_score
             )
 
-            scored_product.final_score = max(
-                0.0,
+            # Hard filter out-of-stock items from receiving a positive final score
+            if (getattr(scored_product.product, "inventory", 0) or 0) <= 0:
+                scored_product.final_score = 0.0
+            else:
+                scored_product.final_score = max(
+                    0.0,
 
-                min(
-                    1.0,
-                    blended,
-                ),
-            )
+                    min(
+                        1.0,
+                        blended,
+                    ),
+                )
 
         return candidates
 
@@ -2728,30 +2778,27 @@ class BusinessRuleFilter:
             ]
 
         # ------------------------------------------------------------------
-        # INVENTORY
+        # INVENTORY & OUT-OF-STOCK PROTECTION
         # ------------------------------------------------------------------
 
-        if (
-            self.config.min_inventory
-            > 0
-        ):
+        min_inv = self.config.min_inventory if self.config.min_inventory is not None else 1
 
-            scored = [
-                scored_product
+        scored = [
+            scored_product
 
-                for scored_product
-                in scored
+            for scored_product
+            in scored
 
-                if (
-                    getattr(
-                        scored_product.product,
-                        "inventory",
-                        0,
-                    )
-                    or 0
+            if (
+                getattr(
+                    scored_product.product,
+                    "inventory",
+                    0,
                 )
-                >= self.config.min_inventory
-            ]
+                or 0
+            )
+            >= min_inv
+        ]
 
         # ------------------------------------------------------------------
         # PURCHASE EXCLUSION
@@ -3023,6 +3070,8 @@ class BusinessRuleFilter:
         self,
         user_id: str,
     ) -> Set[str]:
+        if not self.db or not user_id:
+            return set()
 
         from app.models import (
             Order,
@@ -3070,6 +3119,8 @@ class BusinessRuleFilter:
         user_id: str,
         hours: int = 48,
     ) -> Set[str]:
+        if not self.db or not user_id:
+            return set()
 
         cutoff = (
             datetime.utcnow()
@@ -3364,6 +3415,12 @@ class RankerSelector:
                 scored_product.click_rate_score,
                 "click_rate",
                 "Getting more product clicks this week.",
+            ),
+
+            (
+                scored_product.inventory_score,
+                "inventory",
+                scored_product.inventory_explanation or "In stock and ready to ship.",
             ),
         ]
 

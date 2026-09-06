@@ -13,13 +13,14 @@ export interface CartItem {
   quantity: number
   image?: string
   currency?: string
+  inventory?: number
 }
 
 interface CartContextType {
   items: CartItem[]
-  addItem: (item: Omit<CartItem, 'id'>) => void
+  addItem: (item: Omit<CartItem, 'id'>) => boolean
   removeItem: (id: string) => void
-  updateQuantity: (id: string, quantity: number) => void
+  updateQuantity: (id: string, quantity: number) => boolean
   clearCart: () => void
   totalItems: number
   totalPrice: number
@@ -43,6 +44,7 @@ function mapServerItem(item: any): CartItem {
     quantity: item.quantity,
     image: item.product?.images?.[0]?.url,
     currency: item.product?.currency,
+    inventory: item.product?.inventory !== undefined ? item.product.inventory : undefined,
   }
 }
 
@@ -148,8 +150,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   // ── Best-effort server sync helpers (fire-and-forget, like wishlist) ──
   // A fixed toast id means repeated failures collapse into a single toast.
-  const notifySyncFailed = () => {
-    toast.error('Could not sync cart to server. Changes may not be saved.', {
+  const notifySyncFailed = (err?: any) => {
+    const errorMsg = err?.response?.data?.error || 'Could not sync cart to server. Changes may not be saved.'
+    toast.error(errorMsg, {
       id: 'cart-sync-error',
     })
   }
@@ -202,9 +205,27 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return results.filter((r) => r.id).map((r) => r.id)
   }
 
-  const addItem = (item: Omit<CartItem, 'id'>) => {
+  const addItem = (item: Omit<CartItem, 'id'>): boolean => {
     // Check using itemsRef to safely know the current state outside the updater
     const existing = itemsRef.current.find(i => i.productId === item.productId)
+    const currentQty = existing ? existing.quantity : 0
+    const available = item.inventory !== undefined ? item.inventory : existing?.inventory
+
+    if (available !== undefined) {
+      if (available <= 0) {
+        toast.error('This product is currently out of stock.')
+        return false
+      }
+      if (currentQty + item.quantity > available) {
+        if (currentQty >= available) {
+          toast.error(`You already have all ${available} available unit(s) in your cart.`)
+        } else {
+          toast.error(`Cannot add ${item.quantity} more. Only ${available} available in stock (${currentQty} already in cart).`)
+        }
+        return false
+      }
+    }
+
     if (existing) {
       trackCartEvent(item.productId, 'update', item.quantity)
     } else {
@@ -216,7 +237,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (prevExisting) {
         return prev.map(i =>
           i.productId === item.productId
-            ? { ...i, quantity: i.quantity + item.quantity }
+            ? { ...i, quantity: i.quantity + item.quantity, inventory: item.inventory ?? i.inventory }
             : i
         )
       }
@@ -224,6 +245,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
     // Server sync — idempotent: increments the row or creates it
     syncAdd(item.productId, item.quantity)
+    return true
   }
 
   const removeItem = (id: string) => {
@@ -235,12 +257,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (item) syncRemove(item.productId)
   }
 
-  const updateQuantity = (id: string, quantity: number) => {
+  const updateQuantity = (id: string, quantity: number): boolean => {
     if (quantity <= 0) {
       removeItem(id)
-      return
+      return true
     }
-    const item = items.find(i => i.id === id)
+    const item = itemsRef.current.find(i => i.id === id)
+    if (item && item.inventory !== undefined && quantity > item.inventory) {
+      toast.error(`Requested quantity (${quantity}) exceeds available stock (${item.inventory} available).`)
+      return false
+    }
+
     if (item && item.quantity !== quantity) {
       trackCartEvent(item.productId, 'update', quantity)
     }
@@ -249,6 +276,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return prev.map(i => (i.id === id ? { ...i, quantity } : i))
     })
     if (item && item.quantity !== quantity) syncUpdate(item.productId, quantity)
+    return true
   }
 
   const clearCart = () => {
