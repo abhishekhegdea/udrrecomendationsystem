@@ -89,7 +89,7 @@ model Seller {
   locationUpdatedAt DateTime?
 
   products       Product[]
-  sellerScores   SellerScore[]
+  sellerScore    SellerScore?
   userBehaviours UserBehaviour[]
 
   // Cancellation penalty tracking
@@ -97,6 +97,16 @@ model Seller {
 
   // Quality-return penalty tracking
   returnPenalty Float @default(0) // Cumulative negative score for quality-issue returns
+
+  // Composite Performance & Trust Scores
+  sellerTrustScore     Float   @default(0.70)
+  ratingScore          Float   @default(0.0)
+  fulfilmentRate       Float   @default(1.0)
+  dispatchSlaScore     Float   @default(1.0)
+  cancellationRate     Float   @default(0.0)
+  returnRate           Float   @default(0.0)
+  totalCompletedOrders Int     @default(0)
+  trustBadge           String  @default("STANDARD") // TOP_RATED, FAST_DISPATCH, RELIABLE, STANDARD, AT_RISK
 
   @@index([latitude, longitude])
 }
@@ -300,6 +310,11 @@ model OrderItem {
   returnReason     String? // 'QUALITY', 'DAMAGED', 'MISTAKE', 'OTHER'
   returnReviewText String? // Private feedback captured at return time
   returnRating     Int? // 1-5 rating given alongside the return
+
+  // Dispatch SLA tracking
+  expectedDispatchAt DateTime?
+  dispatchedAt       DateTime?
+  isDispatchedOnTime Boolean   @default(true)
 
   brandId    String?
   brand      Brand?    @relation(fields: [brandId], references: [id])

@@ -4,7 +4,9 @@ import {
   ArrowLeft,
   Trash2,
   Loader2,
+  AlertTriangle,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import {
   formatCurrency,
@@ -27,10 +29,17 @@ export function CartPage() {
     items[0]?.currency ||
     'INR'
 
-  const handleCheckout =
-    () => {
-      navigate('/checkout')
+  const hasOverStockItem = items.some(
+    (item) => item.inventory !== undefined && item.quantity > item.inventory
+  )
+
+  const handleCheckout = () => {
+    if (hasOverStockItem) {
+      toast.error('Some items in your cart exceed available stock. Please adjust quantities before proceeding.')
+      return
     }
+    navigate('/checkout')
+  }
 
   if (items.length === 0) {
     return (
@@ -109,7 +118,7 @@ export function CartPage() {
                     )}
                   </p>
 
-                  <div className="flex items-center gap-4 mt-4">
+                  <div className="flex flex-wrap items-center gap-4 mt-4">
                     <div className="flex items-center border border-border rounded-lg">
                       <button
                         type="button"
@@ -140,11 +149,18 @@ export function CartPage() {
                               1
                           )
                         }
-                        className="px-3 py-1 text-foreground hover:bg-muted rounded-r-lg transition-colors"
+                        disabled={item.inventory !== undefined && item.quantity >= item.inventory}
+                        className="px-3 py-1 text-foreground hover:bg-muted rounded-r-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         +
                       </button>
                     </div>
+
+                    {item.inventory !== undefined && item.quantity >= item.inventory && (
+                      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        (Max stock: {item.inventory})
+                      </span>
+                    )}
 
                     <button
                       type="button"
@@ -158,6 +174,13 @@ export function CartPage() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
+
+                  {item.inventory !== undefined && item.quantity > item.inventory && (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-semibold bg-rose-50 dark:bg-rose-950/40 p-2 rounded-lg border border-rose-200 dark:border-rose-900">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                      Requested quantity exceeds available stock ({item.inventory} available). Please reduce quantity.
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-right font-bold text-lg hidden sm:block">

@@ -268,6 +268,54 @@ class Seller(Base):
         default=0,
     )
 
+    sellerTrustScore = Column(
+        "sellerTrustScore",
+        Float,
+        default=0.70,
+    )
+
+    ratingScore = Column(
+        "ratingScore",
+        Float,
+        default=0.0,
+    )
+
+    fulfilmentRate = Column(
+        "fulfilmentRate",
+        Float,
+        default=1.0,
+    )
+
+    dispatchSlaScore = Column(
+        "dispatchSlaScore",
+        Float,
+        default=1.0,
+    )
+
+    cancellationRate = Column(
+        "cancellationRate",
+        Float,
+        default=0.0,
+    )
+
+    returnRate = Column(
+        "returnRate",
+        Float,
+        default=0.0,
+    )
+
+    totalCompletedOrders = Column(
+        "totalCompletedOrders",
+        Integer,
+        default=0,
+    )
+
+    trustBadge = Column(
+        "trustBadge",
+        String,
+        default="STANDARD",
+    )
+
     products = relationship(
         "Product",
         back_populates="seller",
@@ -521,6 +569,56 @@ class OrderItem(Base):
         String,
         ForeignKey("Category.id"),
         nullable=True,
+    )
+
+    priceAtBuy = Column(
+        Float,
+        nullable=True,
+    )
+
+    cancelled = Column(
+        Boolean,
+        default=False,
+    )
+
+    cancelledAt = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    cancelledBy = Column(
+        String,
+        nullable=True,
+    )
+
+    returned = Column(
+        Boolean,
+        default=False,
+    )
+
+    returnedAt = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    returnReason = Column(
+        String,
+        nullable=True,
+    )
+
+    expectedDispatchAt = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    dispatchedAt = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    isDispatchedOnTime = Column(
+        Boolean,
+        default=True,
     )
 
 

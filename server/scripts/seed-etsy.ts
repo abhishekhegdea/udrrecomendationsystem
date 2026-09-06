@@ -39,6 +39,7 @@ interface EtsyRow {
   images?: string
   product_details?: string
   scraped_at?: string
+  available_quantity?: string
 
   // Optional synthetic/test seller-location columns.
   // These are used only when present in the CSV.
@@ -98,6 +99,13 @@ function resolveCsvPath():
   candidates.push(
     resolve(
       process.cwd(),
+      'etsy_updated.csv'
+    )
+  )
+
+  candidates.push(
+    resolve(
+      process.cwd(),
       'etsy.csv'
     )
   )
@@ -105,13 +113,31 @@ function resolveCsvPath():
   /**
    * Repository root:
    *
+   * udrrecomendationsystem/etsy_updated.csv
    * udrrecomendationsystem/etsy.csv
    */
   candidates.push(
     resolve(
       process.cwd(),
       '..',
+      'etsy_updated.csv'
+    )
+  )
+
+  candidates.push(
+    resolve(
+      process.cwd(),
+      '..',
       'etsy.csv'
+    )
+  )
+
+  candidates.push(
+    resolve(
+      process.cwd(),
+      '..',
+      'data',
+      'etsy_updated.csv'
     )
   )
 
@@ -450,8 +476,29 @@ function parseReviews(
 
 
 function getInventory(
-  availability?: string
+  availability?: string,
+  availableQuantity?: string
 ): number {
+  if (
+    availableQuantity !== undefined &&
+    availableQuantity !== null &&
+    availableQuantity.trim() !== ''
+  ) {
+    const parsed = Number.parseInt(
+      availableQuantity.trim(),
+      10
+    )
+
+    if (
+      Number.isFinite(
+        parsed
+      ) &&
+      parsed >= 0
+    ) {
+      return parsed
+    }
+  }
+
   const value =
     (
       availability ||
@@ -471,6 +518,22 @@ function getInventory(
       'false'
   ) {
     return 0
+  }
+
+  if (
+    value.includes(
+      'limitedstock'
+    ) ||
+    value.includes(
+      'limited stock'
+    )
+  ) {
+    return (
+      Math.floor(
+        Math.random() *
+          2
+      ) + 1
+    )
   }
 
   /**
@@ -1402,7 +1465,8 @@ async function main() {
 
       inventory:
         getInventory(
-          record.availability
+          record.availability,
+          record.available_quantity
         ),
 
       popularity,

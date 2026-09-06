@@ -386,6 +386,15 @@ router.get('/', async (req, res) => {
 
                 isNewSeller:
                   true,
+
+                trustBadge:
+                  true,
+
+                sellerTrustScore:
+                  true,
+
+                dispatchSlaScore:
+                  true,
               },
             },
 
@@ -1112,6 +1121,15 @@ router.get(
 
                 isNewSeller:
                   true,
+
+                trustBadge:
+                  true,
+
+                sellerTrustScore:
+                  true,
+
+                dispatchSlaScore:
+                  true,
               },
             },
 
@@ -1156,6 +1174,622 @@ router.get(
               : String(
                   error
                 ),
+        })
+    }
+  }
+)
+
+
+/**
+ * =========================================================
+ * SUBMIT PRODUCT REVIEW & RATING
+ * =========================================================
+ * POST /api/products/:id/reviews
+ *
+ * Validates delivered order requirement, atomically saves Rating + Review,
+ * recalculates Product.averageRating & reviewsCount, and updates Seller.rating.
+ */
+router.post(
+  '/:id/reviews',
+  async (req, res) => {
+    try {
+      const id =
+        getSingleString(
+          req.params.id
+        )
+      const { rating, text, userId, orderId } =
+        req.body || {}
+
+      if (!id) {
+        return res
+          .status(400)
+          .json({
+            error:
+              'Valid product ID is required',
+          })
+      }
+
+      const ratingVal = Number(rating)
+      if (
+        !Number.isInteger(ratingVal) ||
+        ratingVal < 1 ||
+        ratingVal > 5
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              'Rating must be an integer between 1 and 5',
+          })
+      }
+
+      if (!userId || typeof userId !== 'string') {
+        return res
+          .status(400)
+          .json({
+            error:
+              'User ID is required',
+          })
+      }
+
+      const product =
+        await prisma.product.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            sellerId: true,
+            categoryId: true,
+            brandId: true,
+            averageRating: true,
+            reviewsCount: true,
+          },
+        })
+
+      if (!product) {
+        return res
+          .status(404)
+          .json({
+            error:
+              'Product not found',
+          })
+      }
+
+      // Verify user has delivered order for this product
+      const deliveredOrder =
+        await prisma.order.findFirst({
+          where: {
+            userId,
+            status: 'DELIVERED',
+            ...(orderId ? { id: orderId } : {}),
+            items: {
+              some: {
+                productId: id,
+              },
+            },
+          },
+        })
+
+      if (!deliveredOrder) {
+        return res
+          .status(403)
+          .json({
+            error:
+              'Only customers who have received this product can submit a verified review',
+          })
+      }
+
+      // Execute atomic rating + review creation and product/seller rating recalculation
+      const result =
+        await prisma.$transaction(
+          async (tx) => {
+            // 1. Upsert Rating
+            const existingRating =
+              await tx.rating.findFirst({
+                where: {
+                  userId,
+                  productId: id,
+                },
+              })
+
+            let savedRating
+            if (existingRating) {
+              savedRating =
+                await tx.rating.update({
+                  where: {
+                    id: existingRating.id,
+                  },
+                  data: {
+                    value: ratingVal,
+                    categoryId:
+                      product.categoryId,
+                    brandId:
+                      product.brandId,
+                  },
+                })
+            } else {
+              savedRating =
+                await tx.rating.create({
+                  data: {
+                    value: ratingVal,
+                    userId,
+                    productId: id,
+                    categoryId:
+                      product.categoryId,
+                    brandId:
+                      product.brandId,
+                  },
+                })
+            }
+
+            // 2. Upsert Review (if text provided or update existing)
+            const existingReview =
+              await tx.review.findFirst({
+                where: {
+                  userId,
+                  productId: id,
+                },
+              })
+
+            let savedReview = null
+            if (
+              text &&
+              typeof text === 'string' &&
+              text.trim()
+            ) {
+              if (existingReview) {
+                savedReview =
+                  await tx.review.update({
+                    where: {
+                      id: existingReview.id,
+                    },
+                    data: {
+                      text: text.trim(),
+                      categoryId:
+                        product.categoryId,
+                    },
+                  })
+              } else {
+                savedReview =
+                  await tx.review.create({
+                    data: {
+                      text: text.trim(),
+                      userId,
+                      productId: id,
+                      categoryId:
+                        product.categoryId,
+                    },
+                  })
+              }
+            }
+
+            // 3. Recalculate Product Total Average Rating & Reviews Count
+            // Exact Formula:
+            // New Average = ((Current Average * Total Ratings) + New Rating) / (Total Ratings + 1)
+            const currentAverage = product.averageRating || 0
+            const totalRatings = product.reviewsCount || 0
+            const newRating = ratingVal
+
+            let newReviewsCount: number
+            let newAverageRating: number
+
+            if (existingRating) {
+              // User is updating their previously submitted rating
+              const prevRatingVal = existingRating.value
+              const currentSum = (currentAverage * totalRatings) - prevRatingVal + newRating
+              newReviewsCount = Math.max(1, totalRatings)
+              newAverageRating = Number((currentSum / newReviewsCount).toFixed(1))
+            } else {
+              // Exact Formula for new rating:
+              // New Average = ((Current Average * Total Ratings) + New Rating) / (Total Ratings + 1)
+              if (totalRatings > 0 && currentAverage > 0) {
+                newReviewsCount = totalRatings + 1
+                newAverageRating = Number((((currentAverage * totalRatings) + newRating) / (totalRatings + 1)).toFixed(1))
+              } else {
+                newReviewsCount = 1
+                newAverageRating = Number(newRating.toFixed(1))
+              }
+            }
+
+            // Ensure average rating is clamped safely between 1.0 and 5.0
+            newAverageRating = Math.max(1.0, Math.min(5.0, newAverageRating))
+
+            const updatedProduct =
+              await tx.product.update({
+                where: { id },
+                data: {
+                  averageRating:
+                    newAverageRating,
+                  reviewsCount:
+                    newReviewsCount,
+                },
+                select: {
+                  id: true,
+                  averageRating: true,
+                  reviewsCount: true,
+                },
+              })
+
+            // 4. Recalculate Seller Average Rating across all products
+            const sellerProducts =
+              await tx.product.findMany({
+                where: {
+                  sellerId:
+                    product.sellerId,
+                },
+                select: {
+                  averageRating: true,
+                  reviewsCount: true,
+                },
+              })
+
+            let totalWeightedRating = 0
+            let totalProductReviews = 0
+            for (const sp of sellerProducts) {
+              if (
+                sp.reviewsCount > 0 &&
+                sp.averageRating > 0
+              ) {
+                totalWeightedRating +=
+                  sp.averageRating *
+                  sp.reviewsCount
+                totalProductReviews +=
+                  sp.reviewsCount
+              }
+            }
+
+            const sellerAvgRating =
+              totalProductReviews > 0
+                ? Number(
+                    (
+                      totalWeightedRating /
+                      totalProductReviews
+                    ).toFixed(2)
+                  )
+                : Number(ratingVal.toFixed(2))
+
+            await tx.seller.update({
+              where: {
+                id: product.sellerId,
+              },
+              data: {
+                rating:
+                  sellerAvgRating,
+              },
+            })
+
+            // 5. Create UserBehaviour ML Event
+            await tx.userBehaviour.create({
+              data: {
+                userId,
+                eventType: 'RATING',
+                productId: id,
+                categoryId:
+                  product.categoryId,
+                sellerId:
+                  product.sellerId,
+                brandId:
+                  product.brandId,
+                source:
+                  'delivered_order_review',
+                metadata: {
+                  rating: ratingVal,
+                  reviewText: text
+                    ? text.trim()
+                    : null,
+                  orderId:
+                    deliveredOrder.id,
+                },
+              },
+            })
+
+            return {
+              rating: savedRating,
+              review: savedReview,
+              product: updatedProduct,
+            }
+          }
+        )
+
+      // Fire-and-forget ML event sync to Python ML service if running
+      try {
+        fetch(
+          'http://localhost:8000/api/v1/events/rating',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              product_id: id,
+              rating_value: ratingVal,
+              source:
+                'delivered_order_review',
+              metadata: {
+                reviewText:
+                  text || null,
+                orderId:
+                  deliveredOrder.id,
+              },
+            }),
+          }
+        ).catch(() => {})
+      } catch {
+        // Non-blocking
+      }
+
+      return res.status(201).json({
+        message:
+          'Review and rating submitted successfully',
+        rating: result.rating,
+        review: result.review,
+        averageRating:
+          result.product.averageRating,
+        reviewsCount:
+          result.product.reviewsCount,
+      })
+    } catch (error) {
+      console.error(
+        'Submit review error:',
+        error
+      )
+      return res.status(500).json({
+        error:
+          'Failed to submit review',
+        message:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      })
+    }
+  }
+)
+
+
+/**
+ * =========================================================
+ * GET PRODUCT REVIEWS & STAR DISTRIBUTION
+ * =========================================================
+ * GET /api/products/:id/reviews
+ */
+router.get(
+  '/:id/reviews',
+  async (req, res) => {
+    try {
+      const id =
+        getSingleString(
+          req.params.id
+        )
+      if (!id) {
+        return res
+          .status(400)
+          .json({
+            error:
+              'Valid product ID is required',
+          })
+      }
+
+      const [reviews, ratings, product] =
+        await Promise.all([
+          prisma.review.findMany({
+            where: { productId: id },
+            orderBy: {
+              createdAt: 'desc',
+            },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          }),
+          prisma.rating.findMany({
+            where: { productId: id },
+            select: {
+              userId: true,
+              value: true,
+            },
+          }),
+          prisma.product.findUnique({
+            where: { id },
+            select: {
+              averageRating: true,
+              reviewsCount: true,
+            },
+          }),
+        ])
+
+      if (!product) {
+        return res
+          .status(404)
+          .json({
+            error:
+              'Product not found',
+          })
+      }
+
+      // Map user ratings to reviews
+      const ratingMap = new Map<
+        string,
+        number
+      >()
+      const distribution: Record<
+        number,
+        number
+      > = {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
+      }
+      for (const r of ratings) {
+        ratingMap.set(
+          r.userId,
+          r.value
+        )
+        if (r.value >= 1 && r.value <= 5) {
+          distribution[r.value] =
+            (distribution[r.value] ||
+              0) + 1
+        }
+      }
+
+      // Preserve full volume distribution based on total reviews count and average rating
+      const totalReviewsCount =
+        product.reviewsCount || ratings.length || 0
+      const effectiveAvg =
+        product.averageRating || 0
+      const dbRatingsCount =
+        ratings.length
+      const remainder =
+        Math.max(
+          0,
+          totalReviewsCount -
+            dbRatingsCount
+        )
+
+      if (remainder > 0 && effectiveAvg > 0) {
+        if (effectiveAvg >= 4.0) {
+          const frac = Math.min(1.0, Math.max(0.0, effectiveAvg - 4.0))
+          const fiveStarCount = Math.round(remainder * frac)
+          const fourStarCount = remainder - fiveStarCount
+          distribution[5] += fiveStarCount
+          distribution[4] += fourStarCount
+        } else if (effectiveAvg >= 3.0) {
+          const frac = Math.min(1.0, Math.max(0.0, effectiveAvg - 3.0))
+          const fourStarCount = Math.round(remainder * frac)
+          const threeStarCount = remainder - fourStarCount
+          distribution[4] += fourStarCount
+          distribution[3] += threeStarCount
+        } else if (effectiveAvg >= 2.0) {
+          const frac = Math.min(1.0, Math.max(0.0, effectiveAvg - 2.0))
+          const threeStarCount = Math.round(remainder * frac)
+          const twoStarCount = remainder - threeStarCount
+          distribution[3] += threeStarCount
+          distribution[2] += twoStarCount
+        } else {
+          const frac = Math.min(1.0, Math.max(0.0, effectiveAvg - 1.0))
+          const twoStarCount = Math.round(remainder * frac)
+          const oneStarCount = remainder - twoStarCount
+          distribution[2] += twoStarCount
+          distribution[1] += oneStarCount
+        }
+      }
+
+      const reviewsWithRating =
+        reviews.map((rev) => ({
+          id: rev.id,
+          text: rev.text,
+          createdAt: rev.createdAt,
+          user: rev.user,
+          rating:
+            ratingMap.get(
+              rev.userId
+            ) || 5,
+        }))
+
+      return res.json({
+        reviews: reviewsWithRating,
+        distribution: {
+          5: distribution[5],
+          4: distribution[4],
+          3: distribution[3],
+          2: distribution[2],
+          1: distribution[1],
+          total: totalReviewsCount,
+          averageRating:
+            product.averageRating,
+          reviewsCount:
+            product.reviewsCount,
+        },
+      })
+    } catch (error) {
+      console.error(
+        'Fetch reviews error:',
+        error
+      )
+      return res.status(500).json({
+        error:
+          'Failed to fetch reviews',
+        message:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      })
+    }
+  }
+)
+
+
+/**
+ * =========================================================
+ * GET USER REVIEW FOR PRODUCT
+ * =========================================================
+ * GET /api/products/:id/user-review?userId=...
+ */
+router.get(
+  '/:id/user-review',
+  async (req, res) => {
+    try {
+      const id =
+        getSingleString(
+          req.params.id
+        )
+      const userId =
+        getSingleString(
+          req.query.userId
+        )
+
+      if (!id || !userId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              'Product ID and User ID are required',
+          })
+      }
+
+      const [
+        existingRating,
+        existingReview,
+      ] = await Promise.all([
+        prisma.rating.findFirst({
+          where: {
+            productId: id,
+            userId,
+          },
+        }),
+        prisma.review.findFirst({
+          where: {
+            productId: id,
+            userId,
+          },
+        }),
+      ])
+
+      return res.json({
+        hasReviewed: !!(
+          existingRating ||
+          existingReview
+        ),
+        rating: existingRating
+          ? existingRating.value
+          : null,
+        reviewText: existingReview
+          ? existingReview.text
+          : null,
+      })
+    } catch (error) {
+      return res
+        .status(500)
+        .json({
+          error:
+            'Failed to fetch user review status',
         })
     }
   }
