@@ -84,6 +84,12 @@ from app.ml.price_affinity import (
     UserPriceProfile,
 )
 
+from app.ml.discount_affinity import (
+    build_user_discount_profile,
+    compute_candidate_discount_affinity,
+    UserDiscountProfile,
+)
+
 from app.ml.price_behavior import (
     build_category_price_stats,
     build_user_price_behavior_profile,
@@ -126,37 +132,31 @@ CLICK_AFFINITY_CANDIDATES_PER_SEED = 10
 # recommendation CTR rather than click-volume popularity.
 #
 # User Click Affinity remains a separate personalised KPI.
+# Price Affinity (5%) and Discount Affinity (5%) act as continuous soft signals.
 
 PERSONALIZED_CLICK_WEIGHTS: Dict[str, float] = {
-    "content": 0.095,
-    "collaborative": 0.095,
-    "trending": 0.066,
-    "seasonal": 0.057,
-
-    # Location is now part of the actual recommendation score at 9.5%.
-    # location_score = exp(-seller_distance_km / distance_decay_km)
-    # location_contribution = location_score * 0.095
-    "location": 0.095,
-
-    "category_affinity": 0.076,
-    "brand_affinity": 0.066,
-    "rating": 0.066,
-    "seller_freshness": 0.048,
-    "click_rate": 0.038,
-    "user_click_affinity": 0.095,
-    "engagement": 0.105,
-    "price_affinity": 0.048,
-    # Price behaviour (discount / premium / full-price affinity) joins the
-    # existing numeric price-affinity signal as an experimental 5% signal.
-    # All other weights were rebalanced proportionally so the total is 1.00.
+    "content": 0.080,
+    "collaborative": 0.080,
+    "trending": 0.070,
+    "seasonal": 0.060,
+    "location": 0.080,
+    "category_affinity": 0.080,
+    "brand_affinity": 0.060,
+    "rating": 0.060,
+    "seller_freshness": 0.050,
+    "click_rate": 0.040,
+    "user_click_affinity": 0.090,
+    "engagement": 0.100,
+    "price_affinity": 0.050,
     "price_behavior": 0.050,
+    "discount_affinity": 0.050,
 }
 
 
 # Verify:
-# 0.095 + 0.095 + 0.066 + 0.057 + 0.095 +
-# 0.076 + 0.066 + 0.066 + 0.048 + 0.038 +
-# 0.095 + 0.105 + 0.048 + 0.050 = 1.00
+# 0.080 + 0.080 + 0.070 + 0.060 + 0.080 +
+# 0.080 + 0.060 + 0.060 + 0.050 + 0.040 +
+# 0.090 + 0.100 + 0.050 + 0.050 + 0.050 = 1.000
 
 
 # ============================================================
@@ -1954,6 +1954,7 @@ class ClickAwareScoreBlender:
         config: Optional[EngineConfig] = None,
         user_id: Optional[str] = None,
         price_profile: Optional[UserPriceProfile] = None,
+        discount_profile: Optional[UserDiscountProfile] = None,
         price_behavior_profile: Optional[UserPriceBehaviorProfile] = None,
         price_behavior_category_stats: Optional[
             Dict[str, CategoryPriceStats]
@@ -1980,6 +1981,9 @@ class ClickAwareScoreBlender:
 
         if price_profile is None and db is not None and user_id is not None:
             price_profile = build_user_price_profile(db, user_id)
+
+        if discount_profile is None and db is not None and user_id is not None:
+            discount_profile = build_user_discount_profile(db, user_id)
 
         # ------------------------------------------------------------------
         # PRICE BEHAVIOUR: build the profile and category price distributions
@@ -2029,6 +2033,16 @@ class ClickAwareScoreBlender:
             sp.preferred_price = cand_price.preferred_price
             sp.preferred_price_lower = cand_price.lower_price
             sp.preferred_price_upper = cand_price.upper_price
+
+            # Compute candidate discount affinity score
+            sp.discount_affinity_score = compute_candidate_discount_affinity(
+                discount_profile,
+                sp.product,
+                getattr(sp.product, "categoryId", None),
+            )
+            sp.discount_affinity_confidence = discount_profile.confidence if discount_profile else 0.0
+            sp.user_discount_sensitivity = discount_profile.discount_sensitivity if discount_profile else 0.50
+            sp.preferred_discount_rate = discount_profile.preferred_discount_rate if discount_profile else 0.0
 
             # Compute candidate price behaviour score (discount / premium /
             # full-price matching) using the request-level profile and stats.
@@ -2118,6 +2132,11 @@ class ClickAwareScoreBlender:
                     0.0,
                 )
                 * sp.price_affinity_score
+                + w.get(
+                    "discount_affinity",
+                    0.0,
+                )
+                * getattr(sp, "discount_affinity_score", 0.50)
                 + w.get(
                     "price_behavior",
                     0.0,
@@ -2374,8 +2393,9 @@ class ClickPersonalizedRecommendationEngine:
         # Progressive Cold-Start / Personalized Blending
         # ====================================================
 
-        # Precompute user price profile once per recommendation call
+        # Precompute user price profile and discount profile once per recommendation call
         price_profile = build_user_price_profile(self.db, user_id)
+        discount_profile = build_user_discount_profile(self.db, user_id)
 
         # Precompute the price-behaviour profile and the category price
         # distributions once per call so no candidate triggers extra queries.
@@ -2406,6 +2426,7 @@ class ClickPersonalizedRecommendationEngine:
                 config=config,
                 user_id=user_id,
                 price_profile=price_profile,
+                discount_profile=discount_profile,
                 price_behavior_profile=price_behavior_profile,
                 price_behavior_category_stats=price_behavior_category_stats,
                 price_behavior_global_stats=price_behavior_global_stats,

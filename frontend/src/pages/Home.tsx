@@ -207,6 +207,11 @@ export function HomePage() {
     useNavigate()
 
   const [
+    dealsOnly,
+    setDealsOnly,
+  ] = useState(false)
+
+  const [
     searchQuery,
     setSearchQuery,
   ] = useState('')
@@ -387,6 +392,10 @@ export function HomePage() {
               activeCategory
           }
 
+          if (dealsOnly) {
+            params.hasDiscount = 'true'
+          }
+
           const response =
             await api.get(
               'http://localhost:3001/api/products',
@@ -468,6 +477,7 @@ export function HomePage() {
     page,
     sort,
     activeCategory,
+    dealsOnly,
     fetchKey,
     getProductSignal,
     cancelProductRequest,
@@ -729,20 +739,34 @@ export function HomePage() {
           <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-custom">
             <button
               type="button"
-              onClick={() =>
-                handleCategory(
-                  ''
-                )
-              }
+              onClick={() => {
+                setDealsOnly(false)
+                handleCategory('')
+              }}
               className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-3 rounded-xl border transition-all ${
-                !activeCategory
-                  ? 'bg-primary text-primary-foreground border-primary'
+                !activeCategory && !dealsOnly
+                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                   : 'bg-card border-border text-foreground hover:border-primary'
               }`}
             >
               <TrendingUp className="h-5 w-5" />
-
               All Products
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDealsOnly(!dealsOnly)
+                setPage(1)
+              }}
+              className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-3 rounded-xl border font-semibold transition-all ${
+                dealsOnly
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20'
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60 hover:border-rose-500'
+              }`}
+            >
+              <Sparkles className="h-5 w-5" />
+              🔥 Deals & Discounts
             </button>
 
             {categories.map(
@@ -754,14 +778,15 @@ export function HomePage() {
                   key={
                     category.id
                   }
-                  onClick={() =>
+                  onClick={() => {
+                    setDealsOnly(false)
                     handleCategory(
                       category.id
                     )
-                  }
+                  }}
                   className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-3 rounded-xl border transition-all ${
                     activeCategory ===
-                    category.id
+                    category.id && !dealsOnly
                       ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-card border-border text-foreground hover:border-primary'
                   }`}
@@ -791,9 +816,16 @@ export function HomePage() {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
             <div>
-              <h2 className="text-3xl font-display font-bold text-foreground">
-                Marketplace
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-3xl font-display font-bold text-foreground">
+                  Marketplace
+                </h2>
+                {dealsOnly && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                    🔥 Deals Filter Active
+                  </span>
+                )}
+              </div>
 
               <p className="text-muted-foreground mt-1">
                 {totalCount > 0
@@ -802,44 +834,72 @@ export function HomePage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-
-              <select
-                value={
-                  sort
-                }
-                onChange={(
-                  event
-                ) => {
-                  setSort(
-                    event.target
-                      .value
-                  )
-
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Deals Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setDealsOnly(!dealsOnly)
                   setPage(1)
                 }}
-                className="h-10 px-4 bg-card border border-border rounded-xl text-sm font-medium text-foreground outline-none focus:ring-1 focus:ring-primary"
+                className={`h-10 px-4 rounded-xl text-sm font-semibold border flex items-center gap-2 transition-all cursor-pointer ${
+                  dealsOnly
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                    : 'bg-card text-foreground border-border hover:border-rose-400'
+                }`}
               >
-                {sortOptions.map(
-                  (
-                    option
-                  ) => (
-                    <option
-                      key={
-                        option.value
-                      }
-                      value={
-                        option.value
-                      }
-                    >
-                      {
-                        option.label
-                      }
-                    </option>
-                  )
-                )}
-              </select>
+                <span>🔥</span>
+                <span>{dealsOnly ? 'Showing Discounts' : 'Discounts Only'}</span>
+              </button>
+
+              {/* All Filters Button */}
+              <button
+                type="button"
+                onClick={() => navigate('/products')}
+                className="h-10 px-4 bg-card border border-border hover:border-primary text-foreground rounded-xl text-sm font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <SlidersHorizontal className="h-4 w-4 text-primary" />
+                <span>All Filters</span>
+              </button>
+
+              <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 h-10">
+                <span className="text-xs text-muted-foreground font-medium">Sort:</span>
+                <select
+                  value={
+                    sort
+                  }
+                  onChange={(
+                    event
+                  ) => {
+                    setSort(
+                      event.target
+                        .value
+                    )
+
+                    setPage(1)
+                  }}
+                  className="bg-transparent text-sm font-medium text-foreground outline-none cursor-pointer"
+                >
+                  {sortOptions.map(
+                    (
+                      option
+                    ) => (
+                      <option
+                        key={
+                          option.value
+                        }
+                        value={
+                          option.value
+                        }
+                      >
+                        {
+                          option.label
+                        }
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
             </div>
           </div>
 

@@ -8,6 +8,7 @@ interface QuickViewProduct {
   id: string
   name: string
   price: number
+  discount?: number
   currency?: string
   image?: string
   brand?: string

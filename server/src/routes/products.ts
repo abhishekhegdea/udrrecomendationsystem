@@ -137,6 +137,15 @@ router.get('/', async (req, res) => {
         req.query.minRating
       )
 
+    const minDiscount =
+      getOptionalNumber(
+        req.query.minDiscount
+      )
+
+    const hasDiscount =
+      req.query.hasDiscount === 'true' ||
+      req.query.discountOnly === 'true'
+
     const sort =
       getSingleString(
         req.query.sort
@@ -273,6 +282,24 @@ router.get('/', async (req, res) => {
         averageRating: {
           gte:
             minRating,
+        },
+      })
+    }
+
+    if (
+      minDiscount !== undefined &&
+      minDiscount > 0
+    ) {
+      filters.push({
+        discount: {
+          gte:
+            minDiscount,
+        },
+      })
+    } else if (hasDiscount) {
+      filters.push({
+        discount: {
+          gt: 0,
         },
       })
     }

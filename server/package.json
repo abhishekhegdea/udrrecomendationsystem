@@ -9,6 +9,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "seed:etsy": "tsx scripts/seed-etsy.ts",
+    "seed:discounts": "tsx scripts/seed-discounts.ts",
+    "db:clear-products": "tsx scripts/clear-products.ts",
     "catalog:check": "tsx scripts/check-products.ts",
     "geocode:sellers": "tsx scripts/geocode-sellers.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

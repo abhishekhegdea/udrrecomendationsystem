@@ -74,7 +74,9 @@ FEATURE_ATTRS: Dict[str, str] = {
     "click_rate": "productClickPopularityScore",
     "user_click_affinity": "userClickAffinityScore",
     "engagement": "engagementScore",
+    "price_affinity": "priceBehaviorScore",
     "price_behavior": "priceBehaviorScore",
+    "discount_affinity": "discountAffinityScore",
 }
 
 

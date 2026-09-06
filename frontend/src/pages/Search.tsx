@@ -186,6 +186,11 @@ export function SearchPage() {
       'minRating'
     ) || ''
 
+  const minDiscountParam =
+    searchParams.get(
+      'minDiscount'
+    ) || ''
+
   const sortParam =
     searchParams.get(
       'sort'
@@ -284,6 +289,14 @@ export function SearchPage() {
       minRatingParam
     )
 
+  const [
+    minDiscount,
+    setMinDiscount,
+  ] =
+    useState(
+      minDiscountParam
+    )
+
 
   const lastTrackedQuery =
     useRef('')
@@ -308,6 +321,10 @@ export function SearchPage() {
       minRatingParam
     )
 
+    setMinDiscount(
+      minDiscountParam
+    )
+
     if (!routeCategoryId) {
       setSelectedCategory(
         categoryParam
@@ -318,6 +335,7 @@ export function SearchPage() {
     minPriceParam,
     maxPriceParam,
     minRatingParam,
+    minDiscountParam,
     routeCategoryId,
   ])
 
@@ -529,6 +547,14 @@ export function SearchPage() {
           }
 
 
+          if (
+            minDiscountParam
+          ) {
+            params.minDiscount =
+              minDiscountParam
+          }
+
+
           const response =
             await api.get<
               ProductsResponse
@@ -727,6 +753,7 @@ export function SearchPage() {
     minPriceParam,
     maxPriceParam,
     minRatingParam,
+    minDiscountParam,
     sortParam,
     page,
     user,
@@ -839,6 +866,23 @@ export function SearchPage() {
       }
 
 
+      const nextMinDiscount =
+        overrides.minDiscount !==
+        undefined
+          ? overrides.minDiscount
+          : minDiscountParam
+
+
+      if (
+        nextMinDiscount
+      ) {
+        params.set(
+          'minDiscount',
+          nextMinDiscount
+        )
+      }
+
+
       if (
         nextSort &&
         nextSort !==
@@ -897,6 +941,8 @@ export function SearchPage() {
 
         minRating,
 
+        minDiscount,
+
         page:
           '1',
       })
@@ -924,6 +970,10 @@ export function SearchPage() {
       )
 
       setMinRating(
+        ''
+      )
+
+      setMinDiscount(
         ''
       )
 
@@ -1194,6 +1244,65 @@ export function SearchPage() {
 
                   <option value="1">
                     1★ & up
+                  </option>
+
+                </select>
+
+              </div>
+
+
+              {/* DISCOUNT / DEALS */}
+
+              <div className="mb-6">
+
+                <label
+                  htmlFor="discount-filter"
+                  className="flex items-center justify-between text-sm font-semibold mb-2"
+                >
+                  <span>Discounts & Offers</span>
+                  <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    Deals
+                  </span>
+                </label>
+
+                <select
+                  id="discount-filter"
+                  value={
+                    minDiscount
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMinDiscount(
+                      event.target
+                        .value
+                    )
+                  }
+                  className="w-full h-11 rounded-full border border-border bg-muted/50 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-medium cursor-pointer"
+                >
+
+                  <option value="">
+                    All Items (No Discount Filter)
+                  </option>
+
+                  <option value="1">
+                    🏷️ On Sale (Any Discount)
+                  </option>
+
+                  <option value="10">
+                    🔥 10% Off or more
+                  </option>
+
+                  <option value="20">
+                    🔥 20% Off or more
+                  </option>
+
+                  <option value="30">
+                    ⚡ 30% Off or more
+                  </option>
+
+                  <option value="50">
+                    💥 50% Off or more (Mega Deals)
                   </option>
 
                 </select>
