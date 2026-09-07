@@ -103,18 +103,10 @@ function resolveCsvPath():
     )
   )
 
-  candidates.push(
-    resolve(
-      process.cwd(),
-      'etsy.csv'
-    )
-  )
-
   /**
    * Repository root:
    *
    * udrrecomendationsystem/etsy_updated.csv
-   * udrrecomendationsystem/etsy.csv
    */
   candidates.push(
     resolve(
@@ -128,14 +120,6 @@ function resolveCsvPath():
     resolve(
       process.cwd(),
       '..',
-      'etsy.csv'
-    )
-  )
-
-  candidates.push(
-    resolve(
-      process.cwd(),
-      '..',
       'data',
       'etsy_updated.csv'
     )
@@ -144,29 +128,19 @@ function resolveCsvPath():
   candidates.push(
     resolve(
       process.cwd(),
-      '..',
       'data',
-      'etsy.csv'
+      'etsy_updated.csv'
     )
   )
 
   /**
-   * Common macOS locations.
+   * Common user locations.
    */
   candidates.push(
     join(
       homedir(),
       'Downloads',
-      'etsy.csv'
-    )
-  )
-
-  candidates.push(
-    join(
-      homedir(),
-      'Downloads',
-      'etsy.csv',
-      'etsy.csv'
+      'etsy_updated.csv'
     )
   )
 
@@ -174,7 +148,7 @@ function resolveCsvPath():
     join(
       homedir(),
       'Desktop',
-      'etsy.csv'
+      'etsy_updated.csv'
     )
   )
 
@@ -200,7 +174,7 @@ function resolveCsvPath():
 
   console.error('')
   console.error(
-    '❌ Etsy CSV could not be found.'
+    '❌ Etsy updated CSV could not be found.'
   )
   console.error('')
   console.error(
@@ -218,19 +192,19 @@ function resolveCsvPath():
 
   console.error('')
   console.error(
-    'Either copy etsy.csv into the repository root or run:'
+    'Either copy etsy_updated.csv into the repository root or run:'
   )
 
   console.error('')
 
   console.error(
-    'ETSY_CSV_PATH="/full/path/to/etsy.csv" npm run seed:etsy'
+    'ETSY_CSV_PATH="/full/path/to/etsy_updated.csv" npm run seed:etsy'
   )
 
   console.error('')
 
   throw new Error(
-    'etsy.csv not found'
+    'etsy_updated.csv not found'
   )
 }
 

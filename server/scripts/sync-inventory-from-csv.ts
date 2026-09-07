@@ -34,13 +34,13 @@ async function syncInventory() {
   const csvCandidates = [
     resolve(process.cwd(), 'etsy_updated.csv'),
     resolve(process.cwd(), '..', 'etsy_updated.csv'),
-    resolve(process.cwd(), 'etsy.csv'),
-    resolve(process.cwd(), '..', 'etsy.csv'),
+    resolve(process.cwd(), 'data', 'etsy_updated.csv'),
+    resolve(process.cwd(), '..', 'data', 'etsy_updated.csv'),
   ];
 
   const csvPath = csvCandidates.find((p) => existsSync(p));
   if (!csvPath) {
-    throw new Error('No etsy CSV found');
+    throw new Error('No etsy_updated.csv dataset found');
   }
 
   console.log(`📁 Reading dataset from: ${csvPath}`);
